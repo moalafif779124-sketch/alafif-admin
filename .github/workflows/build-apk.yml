@@ -1,0 +1,86 @@
+name: Build ALAFIF NEWFORM APK
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.29.0'
+          channel: 'stable'
+
+      - name: Install deps
+        run: flutter pub get
+
+      - name: Decode keystore
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > android/app/keystore.p12
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+
+      - name: Build APK
+        run: flutter build apk --release --target-platform android-arm64
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: alafif-newform-apk
+          path: build/app/outputs/flutter-apk/*.apk
+          compression-level: 9
+
+      - name: Upload APK to Release
+        run: |
+          UPLOAD_URL="https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/333416472/assets?name=app-arm64-v8a-release.apk"
+          curl -s -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Content-Type: application/vnd.android.package-archive" \
+            --data-binary @build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
+            "$UPLOAD_URL" -w "\nHTTP:%{http_code}\n" | tail -1
+          echo "APK uploaded"
+
+      - name: Show outputs
+        run: |
+          echo "Build complete!"
+          ls -lh build/app/outputs/flutter-apk/
+
+      - name: Deploy Firestore rules
+        uses: w9jds/firebase-action@v15.23.0
+        with:
+          args: deploy --only firestore:rules,firestore:indexes --project alafif-newform
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+
+      - name: Install Functions deps
+        continue-on-error: true
+        working-directory: ./functions
+        run: npm install --omit=dev
+        env:
+          NODE_ENV: production
+
+      - name: Deploy Cloud Functions
+        continue-on-error: true
+        uses: w9jds/firebase-action@v15.23.0
+        with:
+          args: deploy --only functions --project alafif-newform
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}

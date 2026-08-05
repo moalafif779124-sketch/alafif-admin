@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- خلفية الشعار (دائرة) -->
+    <path
+        android:fillColor="#D4AF37"
+        android:pathData="M54,54m-28,0a28,28 0,1 1,56 0a28,28 0,1 1,-56 0"/>
+    <!-- حرف العين (ع) مبسط -->
+    <path
+        android:fillColor="#2C2D31"
+        android:pathData="M38,48c0,-8 6,-14 14,-14c8,0 14,6 14,14c0,3 -1,5 -3,7l-4,-4c1,-1 2,-2 2,-3c0,-5 -4,-9 -9,-9c-5,0 -9,4 -9,9c0,3 1,5 3,7l-4,4c-2,-2 -4,-4 -4,-7z"/>
+    <!-- النقطة فوق العين -->
+    <path
+        android:fillColor="#2C2D31"
+        android:pathData="M54,30m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0"/>
+</vector>

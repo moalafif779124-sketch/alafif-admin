@@ -1,0 +1,27 @@
+# Flutter
+.dart_tool/
+.packages
+build/
+*.iml
+
+# Android
+android/.gradle/
+android/local.properties
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Firebase logs
+firebase-debug.log
+firebase*.log
+
+# Python
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+Thumbs.db
+.codegraph/

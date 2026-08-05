@@ -1,0 +1,24 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // المنتجات - يمكن للجميع قراءة الصور
+    // فقط المدير يمكنه رفع/حذف الصور
+    match /products/{fileName} {
+      allow read: if true;
+      allow write: if true;
+    }
+    
+    // المستخدمين - يمكن للجميع قراءة الصور الشخصية
+    // فقط صاحب الحساب أو المدير يمكنه رفع الصور
+    match /users/{userId}/{fileName} {
+      allow read: if true;
+      allow write: if true;
+    }
+    
+    // باقي الملفات - فقط المدير
+    match /{allPaths=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+  }
+}

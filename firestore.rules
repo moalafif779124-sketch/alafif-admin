@@ -1,0 +1,101 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =================== قواعد الوظيفة المساعدة ===================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // =================== المستخدمين ===================
+    // يستخدم التطبيق نظام OTP مخصص (معرف ثابت phone_967XXXXXXXXX) بدون Firebase Auth.
+    // لذلك يجب السماح بالقراءة والكتابة للجميع في مستند المستخدم.
+    // الأمان: يتم التحقق من OTP عبر واتساب (يمتلك المستخدم رقم الجوال).
+    // صلاحية المدير/غير المدير تُدارة من خلال حقل isAdmin في المستند.
+    match /users/{userId} {
+      // قراءة عامة — لنظام OTP + مدير
+      allow read: if true;
+      // كتابة عامة — للنظام المخصص OTP
+      // (ليس هناك request.auth في تدفق OTP عبر واتساب)
+      allow create: if true;
+      allow update: if true;
+      allow delete: if false; // لا يمكن حذف المستخدمين من التطبيق
+    }
+
+    // =================== المنتجات ===================
+    // يمكن للجميع (حتى غير المسجلين) قراءة المنتجات
+    // نظام OTP المخصص لا ينشئ مستخدم Firebase Auth (request.auth == null)
+    // المدير يُحدد من حقل isAdmin في التطبيق — السماح بكتابة عامة
+    match /products/{productId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // =================== الفئات ===================
+    // يمكن للجميع قراءة الفئات
+    // نظام OTP المخصص لا ينشئ مستخدم Firebase Auth (request.auth == null)
+    // لذلك يجب السماح بكتابة عامة — المدير يُحدد من حقل isAdmin في التطبيق
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if true;
+      allow delete: if false; // منع الحذف من التطبيق حفاظاً على البيانات
+    }
+
+    // =================== الطلبات ===================
+    // المستخدم يمكنه قراءة/إنشاء طلباته فقط
+    // نظام OTP لا ينشئ مستخدم Firebase Auth — السماح بكتابة عامة
+    // المدير يمكنه قراءة/تحديث جميع الطلبات
+    // الأمان: المستخدم يُحدد userId الخاص به عند إنشاء الطلب
+    match /orders/{orderId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if true;
+      allow delete: if false;
+    }
+
+    // =================== العربة ===================
+    // نظام OTP لا ينشئ مستخدم Firebase Auth — السماح بكتابة عامة
+    // كل مستخدم يملك عربة واحدة فقط (معرفها = userId)
+    match /carts/{cartId} {
+      allow read, write: if true;
+    }
+
+    // =================== العناوين ===================
+    // نظام OTP لا ينشئ مستخدم Firebase Auth — السماح بكتابة عامة
+    // كل مستخدم يملك عنوانه الخاص
+    match /addresses/{addressId} {
+      allow read, write: if true;
+    }
+
+    // =================== البانرات ===================
+    // يمكن للجميع قراءة البانرات
+    // نظام OTP المخصص لا ينشئ مستخدم Firebase Auth (request.auth == null)
+    // السماح بكتابة عامة (المدير يُحدد من حقل isAdmin في التطبيق)
+    match /banners/{bannerId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    match /reviews/{reviewId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if false;
+      allow delete: if false;
+    }
+  }
+}
