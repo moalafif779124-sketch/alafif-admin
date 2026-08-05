@@ -1,4 +1,4 @@
-name: Build ALAFIF NEWFORM APK
+name: Build ALAFIF ADMIN APK
 
 on:
   push:
@@ -44,43 +44,11 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: alafif-newform-apk
+          name: alafif-admin-apk
           path: build/app/outputs/flutter-apk/*.apk
           compression-level: 9
-
-      - name: Upload APK to Release
-        run: |
-          UPLOAD_URL="https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/333416472/assets?name=app-arm64-v8a-release.apk"
-          curl -s -X POST \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Content-Type: application/vnd.android.package-archive" \
-            --data-binary @build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
-            "$UPLOAD_URL" -w "\nHTTP:%{http_code}\n" | tail -1
-          echo "APK uploaded"
 
       - name: Show outputs
         run: |
           echo "Build complete!"
           ls -lh build/app/outputs/flutter-apk/
-
-      - name: Deploy Firestore rules
-        uses: w9jds/firebase-action@v15.23.0
-        with:
-          args: deploy --only firestore:rules,firestore:indexes --project alafif-newform
-        env:
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
-
-      - name: Install Functions deps
-        continue-on-error: true
-        working-directory: ./functions
-        run: npm install --omit=dev
-        env:
-          NODE_ENV: production
-
-      - name: Deploy Cloud Functions
-        continue-on-error: true
-        uses: w9jds/firebase-action@v15.23.0
-        with:
-          args: deploy --only functions --project alafif-newform
-        env:
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
