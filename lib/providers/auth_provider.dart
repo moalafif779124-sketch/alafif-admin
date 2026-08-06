@@ -130,14 +130,22 @@ class AuthProvider with ChangeNotifier {
       await _firebaseService.initialize();
     }
 
-    // 1️⃣ محاولة استرجاع الجلسة المحفوظة من SharedPreferences
-    final restored = await _restoreSavedSession();
-    if (restored) {
-      debugPrint('♻️ User session restored from SharedPreferences');
-      // 🐛 FIX: Re-fetch from Firestore to get latest admin status
-      // OTP users have no Firebase Auth session, so authStateChanges
-      // never fires for them — this ensures admin role is current on app start
-      await refreshUser();
+    // 1️⃣ المصدر الأساسي للجلسة: Firebase Auth (وليس SharedPreferences)
+    // بعد ربط OTP بجلسة Firebase (anonymous auth) تصبح جلسة Firebase
+    // هي الحقيقة الوحيدة — وأي جلسة محفوظة قديمة بدون Firebase Auth
+    // تُعتبر منتهية (لأن قواعد Firestore تتطلب request.auth)
+    final firebaseUser = _authService.currentUser;
+    if (firebaseUser != null) {
+      await _loadUser(firebaseUser.uid);
+      if (_user == null) {
+        // جلسة Firebase يتيمة بدون وثيقة مستخدم — نعتبرها خارجة
+        _user = null;
+        await _clearUserSession();
+      }
+    } else {
+      // لا توجد جلسة Firebase — نمسح أي جلسة قديمة من SharedPreferences
+      _user = null;
+      await _clearUserSession();
     }
 
     // 2️⃣ استرجاع جلسة OTP عند بدء التطبيق (إذا كان في منتصف عملية تحقق)
@@ -147,8 +155,11 @@ class AuthProvider with ChangeNotifier {
     _authService.authStateChanges.listen((User? firebaseUser) async {
       if (firebaseUser != null) {
         await _loadUser(firebaseUser.uid);
+      } else {
+        // تسجيل خروج (أو انتهاء جلسة) — نمسح حالة المستخدم
+        _user = null;
+        notifyListeners();
       }
-      // لا نمسح الجلسة عند غياب Firebase Auth (لأننا نستخدم SP)
     });
   }
 

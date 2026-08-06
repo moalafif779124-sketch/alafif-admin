@@ -77,16 +77,23 @@ class AuthService {
     }
     // OTP صحيح — نكمل
 
-    // 2️⃣ استخدام معرف ثابت يعتمد على رقم الجوال (بدلاً من anonymous auth)
-    final cleanPhone = phone.replaceAll('+', '');
-    final uid = 'phone_$cleanPhone';
-    debugPrint('🔑 Deterministic UID: $uid for phone: $phone');
+    // 2️⃣ إنشاء جلسة Firebase Auth (مجهولة الهوية)
+    // — شرط أساسي لقواعد Firestore الأمنية (request.auth != null)
+    UserCredential credential;
+    try {
+      credential = await _firebaseService.auth.signInAnonymously();
+    } catch (e) {
+      debugPrint('⚠️ Anonymous sign-in error: $e');
+      throw Exception('فشل الاتصال بخدمة التحقق. حاول مرة أخرى.');
+    }
+    final authUid = credential.user!.uid;
+    debugPrint('🔑 Firebase Auth UID: $authUid for phone: $phone');
 
-    // 3️⃣ البحث عن مستخدم موجود بنفس المعرف الثابت
+    // 3️⃣ البحث عن مستخدم مسجل على هذا الجهاز (نفس جلسة Firebase)
     try {
       final existingUserDoc = await _firebaseService.firestore
           .collection('users')
-          .doc(uid)
+          .doc(authUid)
           .get()
           .timeout(const Duration(seconds: 10));
 
@@ -94,28 +101,44 @@ class AuthService {
         final existingUserData = existingUserDoc.data()!;
         existingUserData['id'] = existingUserDoc.id;
         _pendingPhone = null;
-        debugPrint('✅ Existing user found: ${existingUserData['fullName']}');
+        debugPrint('✅ User session found: ${existingUserData['fullName']}');
         return app.AppUser.fromMap(existingUserData);
       }
     } catch (e) {
       debugPrint('⚠️ Firestore search error: $e');
     }
 
-    // 4️⃣ مستخدم جديد - نحتاج اسم
+    // 4️⃣ ترحيل الحساب القديم (phone_<number>) إلى معرف Firebase الجديد
+    // — يحافظ على النقاط والعناوين والطلبات والمفضلة المسجلة سابقاً
+    final legacyId = 'phone_${phone.replaceAll('+', '')}';
+    if (legacyId != authUid) {
+      final migrated =
+          await _migrateLegacyUser(legacyId: legacyId, newUid: authUid, phone: phone);
+      if (migrated != null) {
+        _pendingPhone = null;
+        return migrated;
+      }
+    }
+
+    // 5️⃣ مستخدم جديد - نحتاج اسم
     if (fullName == null || fullName.trim().isEmpty) {
       throw Exception('مطلوب الاسم الكامل للمستخدم الجديد');
     }
 
-    // 5️⃣ إنشاء المستخدم في Firestore
+    // 6️⃣ إنشاء المستخدم في Firestore بمعرف Firebase الرسمي
     final user = app.AppUser(
-      id: uid,
+      id: authUid,
       fullName: fullName.trim(),
       phone: phone,
       createdAt: DateTime.now(),
     );
 
+    final userMap = user.toMap();
+    // رقم الجوال كحقل مستقل (متوافق مع قواعد Firestore الجديدة)
+    userMap['phoneNumber'] = phone;
+
     try {
-      await _firebaseService.saveUser(user.toMap());
+      await _firebaseService.saveUser(userMap);
     } catch (e) {
       debugPrint('⚠️ Save user error: $e');
       throw Exception('فشل إنشاء الحساب. حاول مرة أخرى.');
@@ -123,6 +146,79 @@ class AuthService {
 
     _pendingPhone = null;
     return user;
+  }
+
+  /// ترحيل حساب المستخدم القديم (phone_<number>) إلى معرف Firebase Auth الجديد
+  Future<app.AppUser?> _migrateLegacyUser({
+    required String legacyId,
+    required String newUid,
+    required String phone,
+  }) async {
+    try {
+      final legacyDoc = await _firebaseService.firestore
+          .collection('users')
+          .doc(legacyId)
+          .get()
+          .timeout(const Duration(seconds: 10));
+      if (!legacyDoc.exists) return null;
+
+      final data = Map<String, dynamic>.from(legacyDoc.data()!);
+      data['id'] = newUid;
+      data['phone'] = phone;
+      data['phoneNumber'] = phone;
+      data['migratedAt'] = DateTime.now().millisecondsSinceEpoch;
+
+      // نسخ وثيقة المستخدم إلى المعرف الجديد ثم حذف القديمة
+      await _firebaseService.firestore
+          .collection('users')
+          .doc(newUid)
+          .set(data, SetOptions(merge: true));
+      await _firebaseService.firestore
+          .collection('users')
+          .doc(legacyId)
+          .delete();
+
+      // ترحيل البيانات المرتبطة (طلبات/عناوين/مفضلة/نقاط)
+      await _migrateUserData(legacyId: legacyId, newUid: newUid);
+
+      debugPrint('♻️ Legacy user migrated: $legacyId → $newUid');
+      return app.AppUser.fromMap(data);
+    } catch (e) {
+      debugPrint('⚠️ Legacy migration error: $e');
+      return null;
+    }
+  }
+
+  /// نقل وثائق المستخدم المرتبطة من المعرف القديم إلى الجديد
+  Future<void> _migrateUserData({
+    required String legacyId,
+    required String newUid,
+  }) async {
+    const collections = [
+      'orders',
+      'addresses',
+      'wishlists',
+      'points_history',
+      'carts',
+    ];
+    for (final collection in collections) {
+      try {
+        final snap = await _firebaseService.firestore
+            .collection(collection)
+            .where('userId', isEqualTo: legacyId)
+            .limit(400)
+            .get()
+            .timeout(const Duration(seconds: 15));
+        final batch = _firebaseService.firestore.batch();
+        for (final doc in snap.docs) {
+          batch.update(doc.reference, {'userId': newUid});
+        }
+        await batch.commit().timeout(const Duration(seconds: 15));
+        debugPrint('♻️ Migrated ${snap.docs.length} docs in $collection');
+      } catch (e) {
+        debugPrint('⚠️ Migration skip $collection: $e');
+      }
+    }
   }
 
   void cancelOtp() {
