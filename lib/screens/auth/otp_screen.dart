@@ -106,7 +106,8 @@ class _OtpScreenState extends State<OtpScreen> {
           icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () {
             context.read<AuthProvider>().cancelOtp();
-            Navigator.pop(context);
+            // maybePop آمنة أيضاً عندما تكون الشاشة هي شاشة البوابة الرئيسية
+            Navigator.of(context).maybePop();
           },
         ),
       ),
