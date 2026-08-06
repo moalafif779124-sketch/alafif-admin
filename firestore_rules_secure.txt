@@ -1,0 +1,148 @@
+// ═══════════════════════════════════════════════════════════════════════════
+//  ALAFIF — FIREBASE SECURITY RULES (Production)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+//  HOW TO PUBLISH (للنشر):
+//    1. Open the Firebase Console → https://console.firebase.google.com
+//    2. Select project: alafif-newform
+//    3. Firestore Database → Rules tab
+//    4. Delete the existing rules, copy EVERYTHING in this file
+//    5. Click "Publish" (نشر)
+//
+//  ⚠️⚠️  IMPORTANT — READ BEFORE PUBLISHING  ⚠️⚠️
+//  ───────────────────────────────────────────────────────────────────────────
+//  These rules follow the standard Firebase Auth model
+//  (request.auth.uid == userId). They protect orders, users, addresses,
+//  carts, wishlists and points_history so that a customer can ONLY touch
+//  their OWN documents, and ONLY store admins (users/{uid} where
+//  isAdmin == true) can write products/banners/orders-status/etc.
+//
+//  ⚠️  KNOWN GAP — OTP (phone) LOGIN USERS:
+//      The current app's WhatsApp-OTP login does NOT create a Firebase Auth
+//      session. OTP users get a Firestore user document keyed by
+//      "phone_<number>" (e.g. phone_967777000000) but request.auth is NULL
+//      for them. Email-login users DO have real Firebase Auth sessions and
+//      work with these rules as-is.
+//
+//      ⇒ BEFORE publishing, the developer must make the OTP login also
+//        create a Firebase Auth session. Recommended (smallest change):
+//        - At OTP confirmation, call FirebaseAuth signInAnonymously() (or
+//          Firebase Phone Auth), then save the user doc under
+//          request.auth.uid instead of "phone_<number>".
+//      Until that migration ships, publishing these rules will block
+//      OTP customers from creating orders / reading their profile.
+//      Email-login customers and all admin operations are unaffected.
+//
+// ───────────────────────────────────────────────────────────────────────────
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ============ مساعدات (Helper functions) ============
+
+    // هل المستخدم مسجل دخول عبر Firebase Auth؟
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // هل المستخدم مدير؟ (نقرأ وثيقته في users/{uid} ونتحقق من isAdmin == true)
+    function isAdmin() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
+
+    // هل الوثيقة تخص المستخدم الحالي؟
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // ============ الكتالوجات العامة: قراءة للجميع، كتابة للمدير فقط ============
+
+    // المنتجات — يراها كل الزوار، تعديلها للمدير فقط
+    match /products/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // البانرات (الإعلانات الدوارة)
+    match /banners/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // الفئات
+    match /categories/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // التخفيضات الخاطفة
+    match /flash_sales/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // التقييمات — يقرأها الجميع، كتابة تقييم المستخدم لنفسه فقط
+    match /reviews/{docId} {
+      allow read: if true;
+      allow create: if isSignedIn() &&
+        request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // إعدادات التطبيق (التبويبات...) — قراءة للجميع، كتابة للمدير
+    match /app_config/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ============ وثائق المستخدمين: ملكية فردية ============
+
+    // users/{userId} — المستخدم يقرأ/يكتب وثيقته فقط، والمدير يصل للكل
+    match /users/{userId} {
+      allow read, write: if isOwner(userId) || isAdmin();
+    }
+
+    // orders/{orderId} — العميل يقرأ/يحدّث طلباته فقط، والمدير يدير الكل
+    match /orders/{orderId} {
+      allow create: if isSignedIn() &&
+        request.resource.data.userId == request.auth.uid;
+      allow read, update: if isOwner(resource.data.userId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // addresses — عنوان المستخدم
+    match /addresses/{docId} {
+      allow create: if isSignedIn() &&
+        request.resource.data.userId == request.auth.uid;
+      allow read, update, delete: if isOwner(resource.data.userId) || isAdmin();
+    }
+
+    // carts — سلة المستخدم
+    match /carts/{docId} {
+      allow create: if isSignedIn() &&
+        request.resource.data.userId == request.auth.uid;
+      allow read, update, delete: if isOwner(resource.data.userId) || isAdmin();
+    }
+
+    // wishlists — المفضلة
+    match /wishlists/{docId} {
+      allow create: if isSignedIn() &&
+        request.resource.data.userId == request.auth.uid;
+      allow read, update, delete: if isOwner(resource.data.userId) || isAdmin();
+    }
+
+    // points_history — سجل النقاط (قراءة لصاحبها فقط، كتابة للمدير/النظام)
+    match /points_history/{docId} {
+      allow read: if isOwner(resource.data.userId) || isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // ============ صلاحيات المدير الشاملة ============
+    // أي وثيقة في أي مجموعة لم تُذكر أعلاه — المدير فقط يقرأ ويكتب
+    match /{document=**} {
+      allow read, write: if isAdmin();
+    }
+  }
+}
