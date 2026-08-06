@@ -8,6 +8,7 @@ import 'admin/admin_products_screen.dart';
 import 'admin/admin_orders_screen.dart';
 import 'admin/admin_banners_screen.dart';
 import 'admin/admin_flash_sale_screen.dart';
+import 'admin/admin_analytics_screen.dart';
 
 /// الهيكل الرئيسي لتطبيق الإدارة — تبويبات إدارة المتجر
 class MainShell extends StatefulWidget {
@@ -26,6 +27,7 @@ class _MainShellState extends State<MainShell> {
     AdminOrdersScreen(),
     AdminBannersScreen(),
     AdminFlashSaleScreen(),
+    AdminAnalyticsScreen(),
   ];
 
   final List<IconData> _icons = const [
@@ -34,6 +36,7 @@ class _MainShellState extends State<MainShell> {
     Icons.receipt_long_outlined,
     Icons.view_carousel_outlined,
     Icons.bolt_outlined,
+    Icons.analytics_outlined,
   ];
 
   final List<String> _labels = const [
@@ -42,6 +45,7 @@ class _MainShellState extends State<MainShell> {
     'الطلبات',
     'البانرات',
     'التخفيضات',
+    'الإحصائيات',
   ];
 
   void _logout() async {

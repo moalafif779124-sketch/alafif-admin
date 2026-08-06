@@ -41,6 +41,7 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
 
   String? _categoryId;
   List<String> _selectedSizes = [];
+  final Map<String, TextEditingController> _stockVariantControllers = {};
   bool _isFeatured = false;
   bool _isNewArrival = false;
   bool _hasDiscount = false;
@@ -92,6 +93,9 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
     _tagsController.dispose();
     _stockQuantityController.dispose();
     _sizeRangeController.dispose();
+    for (final c in _stockVariantControllers.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -129,6 +133,13 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
     _tagsController.text = (p['tags'] as List<dynamic>?)?.join(', ') ?? '';
     _stockQuantityController.text = (p['stockQuantity'] ?? 0).toString();
     _sizeRangeController.text = p['sizeRange'] ?? '';
+    // المخزون حسب المقاس
+    _stockVariantControllers.clear();
+    final savedVariants = (p['stockVariants'] as Map<String, dynamic>?) ?? {};
+    savedVariants.forEach((size, qty) {
+      _stockVariantControllers[size] =
+          TextEditingController(text: qty.toString());
+    });
     _selectedColors = (p['colorOptions'] as List<dynamic>?)
             ?.map((e) => (e as Map<String, dynamic>)['hex'] as String? ?? '')
             .where((h) => h.isNotEmpty)
@@ -184,6 +195,12 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
         return {'name': match['name'], 'hex': hex};
       }).toList(),
       'stock': {},
+      'stockVariants': {
+        for (final size in _selectedSizes)
+          size: int.tryParse(
+                  _stockVariantControllers[size]?.text.trim() ?? '') ??
+              0,
+      },
       'stockQuantity': int.tryParse(_stockQuantityController.text.trim()) ?? 0,
       'isFeatured': _isFeatured,
       'isNewArrival': _isNewArrival,
@@ -516,6 +533,63 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
                         );
                       }).toList(),
                     ),
+                    const SizedBox(height: 14),
+
+                    // ===== المخزون حسب المقاس =====
+                    if (_selectedSizes.isNotEmpty) ...[
+                      const Text(
+                        'المخزون حسب المقاس',
+                        style: TextStyle(
+                            fontSize: 13, color: AppColors.textSecondary),
+                      ),
+                      const SizedBox(height: 6),
+                      ..._selectedSizes.map((size) {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 56,
+                                height: 40,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary
+                                      .withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  size,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: TextField(
+                                  controller:
+                                      _stockVariantControllers.putIfAbsent(
+                                    size,
+                                    () => TextEditingController(),
+                                  ),
+                                  keyboardType: TextInputType.number,
+                                  decoration: _inputDecoration(
+                                    'الكمية (0 = نفذت الكمية)',
+                                    Icons.inventory_2_outlined,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                      const Text(
+                        'أدخل 0 للمقاسات النافذة — سيظهر للمشتري "نفذت الكمية"',
+                        style: TextStyle(
+                            fontSize: 11, color: AppColors.textSecondary),
+                      ),
+                    ],
                   ],
                 ),
               const SizedBox(height: 20),

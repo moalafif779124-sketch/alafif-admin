@@ -9,6 +9,7 @@ import 'admin_products_screen.dart';
 import 'admin_categories_screen.dart';
 import 'admin_orders_screen.dart';
 import 'admin_banners_screen.dart';
+import 'admin_analytics_screen.dart';
 import 'admin_users_screen.dart';
 import 'tab_management_screen.dart';
 import 'admin_flash_sale_screen.dart';
@@ -352,6 +353,17 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const AdminFlashSaleScreen()),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _AdminMenuItem(
+                      icon: Icons.analytics,
+                      title: 'الإحصائيات',
+                      subtitle: 'الإيرادات اليومية ومؤشرات الأداء',
+                      color: AppColors.success,
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const AdminAnalyticsScreen()),
                       ),
                     ),
                     const SizedBox(height: 8),

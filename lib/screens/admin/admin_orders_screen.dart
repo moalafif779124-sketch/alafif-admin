@@ -41,13 +41,13 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
       case 'pending':
         return 'قيد المراجعة';
       case 'confirmed':
-        return 'تم التأكيد';
+        return 'تم الاعتماد';
       case 'processing':
         return 'قيد التجهيز';
       case 'shipped':
-        return 'تم الشحن';
+        return 'في الطريق';
       case 'delivered':
-        return 'تم التوصيل';
+        return 'مكتمل';
       case 'cancelled':
         return 'ملغي';
       default:
@@ -786,16 +786,326 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
               onRefresh: () async {
                 setState(() {}); // RefreshIndicator يعيد تعشيق Stream
               },
-              child: ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: orders.length,
-                itemBuilder: (context, index) {
-                  final orderData = orders[index];
-                  return _buildOrderCard(orderData);
-                },
+              child: LayoutBuilder(
+                builder: (context, constraints) => ListView(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  children: [
+                    // ===== لوحة كانبان: أعمدة حسب حالة الطلب =====
+                    SizedBox(
+                      height: constraints.maxHeight - 24,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        children: [
+                          ..._kanbanStatuses.map(
+                            (s) => _buildKanbanColumn(
+                                orders, s.$1, s.$2, s.$3, s.$4),
+                          ),
+                          _buildKanbanColumn(
+                            orders,
+                            'cancelled',
+                            'ملغي',
+                            Icons.cancel_outlined,
+                            AppColors.error,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             );
           },
+        ),
+      ),
+    );
+  }
+
+  // ======================== لوحة كانبان ========================
+
+  /// مسار الحالات: قيد المراجعة ← تم الاعتماد ← قيد التجهيز ← في الطريق ← مكتمل
+  static const List<(String, String, IconData, Color)> _kanbanStatuses = [
+    ('pending', 'قيد المراجعة', Icons.schedule, Color(0xFFFFB300)),
+    ('confirmed', 'تم الاعتماد', Icons.check_circle_outline, Color(0xFF2196F3)),
+    ('processing', 'قيد التجهيز', Icons.inventory_2_outlined, Color(0xFFFF9800)),
+    ('shipped', 'في الطريق', Icons.local_shipping_outlined, Color(0xFF9C27B0)),
+    ('delivered', 'مكتمل', Icons.verified_outlined, Color(0xFF4CAF50)),
+  ];
+
+  /// الحالة التالية في المسار (null = الحالة النهائية)
+  String? _nextStatus(String status) {
+    switch (status) {
+      case 'pending':
+        return 'confirmed';
+      case 'confirmed':
+        return 'processing';
+      case 'processing':
+        return 'shipped';
+      case 'shipped':
+        return 'delivered';
+      default:
+        return null; // delivered / cancelled
+    }
+  }
+
+  /// تقدم الطلب خطوة واحدة في المسار — كتابة مباشرة لحقل status في Firestore
+  Future<void> _advanceOrderStatus(Map<String, dynamic> orderData) async {
+    final orderId = orderData['id'] ?? '';
+    final current = orderData['status'] as String? ?? 'pending';
+    final next = _nextStatus(current);
+    if (next == null || orderId.isEmpty) return;
+
+    try {
+      await _firebase.updateOrderStatus(orderId, next);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('تم نقل الطلب إلى "${_statusText(next)}" ✓'),
+            backgroundColor: AppColors.success,
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('فشل تحديث الحالة: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  Widget _buildKanbanColumn(
+    List<Map<String, dynamic>> allOrders,
+    String status,
+    String label,
+    IconData icon,
+    Color color,
+  ) {
+    final columnOrders = allOrders
+        .where((o) => (o['status'] as String? ?? 'pending') == status)
+        .toList();
+
+    return Container(
+      width: 280,
+      margin: const EdgeInsets.symmetric(horizontal: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // رأس العمود
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: color.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              children: [
+                Icon(icon, size: 18, color: color),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: color,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${columnOrders.length}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          // بطاقات الطلبات في العمود
+          Expanded(
+            child: columnOrders.isEmpty
+                ? Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: AppColors.border.withValues(alpha: 0.5),
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.inbox_outlined,
+                            size: 28,
+                            color: AppColors.textSecondary
+                                .withValues(alpha: 0.4)),
+                        const SizedBox(height: 6),
+                        Text(
+                          'لا توجد طلبات',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary
+                                .withValues(alpha: 0.7),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    padding: EdgeInsets.zero,
+                    itemCount: columnOrders.length,
+                    itemBuilder: (_, i) =>
+                        _buildKanbanCard(columnOrders[i], status, color),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildKanbanCard(
+      Map<String, dynamic> orderData, String status, Color color) {
+    final orderId = orderData['id'] ?? '';
+    final orderNumber =
+        orderData['orderNumber'] as String? ?? '#' + orderId;
+    final total = (orderData['total'] ?? 0).toDouble();
+    final createdAt = orderData['createdAt'];
+    final customerName = orderData['shippingAddress'] != null
+        ? (orderData['shippingAddress']['fullName'] as String? ?? '')
+        : '';
+    final itemCount = (orderData['items'] as List?)?.length ?? 0;
+    final next = _nextStatus(status);
+    final isFinal = next == null;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: AppColors.border.withValues(alpha: 0.5)),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _showOrderDetails(orderData),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      orderNumber,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    _formatDate(createdAt),
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: AppColors.textSecondary.withValues(alpha: 0.8),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                customerName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Text(
+                    '${total.toStringAsFixed(0)} YER',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (itemCount > 0)
+                    Text(
+                      '$itemCount منتج',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textSecondary
+                            .withValues(alpha: 0.9),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              // زر التقدم / حالة نهائية
+              SizedBox(
+                width: double.infinity,
+                height: 34,
+                child: isFinal
+                    ? Container(
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          status == 'delivered' ? 'مكتمل ✓' : 'ملغي',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: color,
+                          ),
+                        ),
+                      )
+                    : ElevatedButton.icon(
+                        onPressed: () => _advanceOrderStatus(orderData),
+                        icon: const Icon(Icons.arrow_forward, size: 15),
+                        label: Text(
+                          'نقل إلى ${_statusText(next)}',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: color,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          elevation: 0,
+                        ),
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
     );
