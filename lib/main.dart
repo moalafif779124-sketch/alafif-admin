@@ -80,7 +80,9 @@ class _AdminGateState extends State<_AdminGate> {
     // (initialize() محمية داخلياً بـ isInitialized — آمنة للنداء المتكرر)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_initialized && mounted) {
-        _initialized = true;
+        // setState ضروري: initialize() قد لا يستدعي notifyListeners
+        // إذا لم توجد جلسة محفوظة ولا جلسة OTP معلّقة
+        setState(() => _initialized = true);
         context.read<AuthProvider>().initialize();
       }
     });
