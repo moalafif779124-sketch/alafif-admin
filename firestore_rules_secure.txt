@@ -102,6 +102,11 @@ service cloud.firestore {
     // users/{userId} — المستخدم يقرأ/يكتب وثيقته فقط، والمدير يصل للكل
     match /users/{userId} {
       allow read, write: if isOwner(userId) || isAdmin();
+      // 🔁 استثناء الترحيل (migration):
+      // قراءة الحسابات القديمة (phone_<رقم>) مسموحة لأي مستخدم مسجل
+      // حتى يتمكن تطبيق الهاتف من ترحيل الحساب إلى معرف Firebase الجديد
+      // عند أول تسجيل دخول بعد التحديث. أزل هذا السطر بعد اكتمال الترحيل.
+      allow read: if isSignedIn() && userId.startsWith('phone_');
     }
 
     // orders/{orderId} — العميل يقرأ/يحدّث طلباته فقط، والمدير يدير الكل

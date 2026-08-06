@@ -141,6 +141,18 @@ class AuthProvider with ChangeNotifier {
         // جلسة Firebase يتيمة بدون وثيقة مستخدم — نعتبرها خارجة
         _user = null;
         await _clearUserSession();
+      } else {
+        // 🔧 إصلاح ذاتي عند التشغيل: إذا فشل ترحيل صلاحية المدير أول مرة
+        // (شبكة ضعيفة أثناء تسجيل الدخول) نستعيدها من الحساب القديم
+        if (_user!.isAdmin != true && _user!.phone.isNotEmpty) {
+          final healed = await _authService.healAdminFromLegacy(
+            uid: _user!.id,
+            phone: _user!.phone,
+          );
+          if (healed) {
+            await _loadUser(_user!.id); // إعادة التحميل بالصلاحية الجديدة
+          }
+        }
       }
     } else {
       // لا توجد جلسة Firebase — نمسح أي جلسة قديمة من SharedPreferences

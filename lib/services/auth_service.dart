@@ -99,6 +99,23 @@ class AuthService {
 
       if (existingUserDoc.exists) {
         final existingUserData = existingUserDoc.data()!;
+
+        // 🔧 إصلاح ذاتي: إذا فشل الترحيل أول مرة (شبكة ضعيفة) وفقد isAdmin
+        // بينما الحساب القديم (phone_<رقم>) مدير — نستعيد الصلاحية فوراً
+        if (existingUserData['isAdmin'] != true) {
+          final healed = await healAdminFromLegacy(uid: authUid, phone: phone);
+          if (healed) {
+            final refreshed = await _firebaseService.firestore
+                .collection('users')
+                .doc(authUid)
+                .get()
+                .timeout(const Duration(seconds: 10));
+            if (refreshed.exists) {
+              existingUserData.addAll(refreshed.data()!);
+            }
+          }
+        }
+
         existingUserData['id'] = existingUserDoc.id;
         _pendingPhone = null;
         debugPrint('✅ User session found: ${existingUserData['fullName']}');
@@ -148,6 +165,49 @@ class AuthService {
     return user;
   }
 
+  /// 🔧 إصلاح ذاتي: استرجاع صلاحية المدير من الحساب القديم (phone_<رقم>)
+  /// إذا فشل الترحيل أثناء أول تسجيل دخول (شبكة ضعيفة) — يعيد true عند النجاح
+  Future<bool> healAdminFromLegacy({
+    required String uid,
+    required String phone,
+  }) async {
+    if (uid.isEmpty || phone.isEmpty) return false;
+    final legacyId = 'phone_${phone.replaceAll('+', '')}';
+    if (legacyId == uid) return false;
+    try {
+      final current = await _firebaseService.firestore
+          .collection('users')
+          .doc(uid)
+          .get()
+          .timeout(const Duration(seconds: 8));
+      if (!current.exists) return false;
+      if (current.data()?['isAdmin'] == true) return false; // مدير بالفعل
+
+      final legacy = await _firebaseService.firestore
+          .collection('users')
+          .doc(legacyId)
+          .get()
+          .timeout(const Duration(seconds: 8));
+      if (!legacy.exists) return false;
+      final legacyData = legacy.data()!;
+      if (legacyData['isAdmin'] != true) return false;
+
+      // دمج صلاحية المدير + رقم الجوال في الوثيقة الجديدة
+      await _firebaseService.firestore.collection('users').doc(uid).update({
+        'isAdmin': true,
+        'phone': phone,
+        'phoneNumber': phone,
+      });
+      // ترحيل البيانات المرتبطة (طلبات/عناوين/مفضلة/نقاط)
+      await _migrateUserData(legacyId: legacyId, newUid: uid);
+      debugPrint('🔧 Admin healed from legacy: $legacyId → $uid');
+      return true;
+    } catch (e) {
+      debugPrint('⚠️ Admin heal error: $e');
+      return false;
+    }
+  }
+
   /// ترحيل حساب المستخدم القديم (phone_<number>) إلى معرف Firebase Auth الجديد
   Future<app.AppUser?> _migrateLegacyUser({
     required String legacyId,
@@ -173,10 +233,15 @@ class AuthService {
           .collection('users')
           .doc(newUid)
           .set(data, SetOptions(merge: true));
-      await _firebaseService.firestore
-          .collection('users')
-          .doc(legacyId)
-          .delete();
+      // الحذف بجهدٍ ممكن — قد تمنعه قواعد Firestore (حساب قديم بدون مالك)
+      try {
+        await _firebaseService.firestore
+            .collection('users')
+            .doc(legacyId)
+            .delete();
+      } catch (e) {
+        debugPrint('⚠️ Legacy doc delete skipped (rules): $e');
+      }
 
       // ترحيل البيانات المرتبطة (طلبات/عناوين/مفضلة/نقاط)
       await _migrateUserData(legacyId: legacyId, newUid: newUid);
