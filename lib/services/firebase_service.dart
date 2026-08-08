@@ -816,24 +816,11 @@ class FirebaseService {
 
   // =================== التخفيضات الخاطفة (Flash Sales) ===================
 
-  /// إنشاء تخفيض خاطف جديد — مع إرسال إشعار FCM للموضوع
+  /// إنشاء تخفيض خاطف جديد
+  /// (الإشعار يُرسل تلقائياً من خادم Firebase عبر Cloud Function
+  /// عند إنشاء الوثيقة — بدون مفتاح خادم داخل التطبيق)
   Future<String> createFlashSale(Map<String, dynamic> data) async {
     final docRef = await firestore.collection('flash_sales').add(data);
-
-    // إرسال إشعار FCM تلقائي (fire-and-forget — لا يحجب الحفظ)
-    try {
-      final productName = data['productName'] as String? ?? 'منتجنا';
-      final discount = data['discountPercentage'] ?? 0;
-      final productId = data['productId'] as String? ?? '';
-      unawaited(_sendFlashSaleNotification(
-        discount.toString(),
-        productName,
-        productId: productId,
-      ));
-    } catch (e) {
-      debugPrint('⚠️ Flash sale notification dispatch failed: $e');
-    }
-
     return docRef.id;
   }
 
@@ -883,71 +870,6 @@ class FirebaseService {
       await firestore.collection('flash_sales').doc(id).delete();
     } catch (e) {
       debugPrint('⚠️ Failed to delete flash sale: $e');
-    }
-  }
-
-  /// إرسال إشعار FCM لموضوع /topics/flash_sales عبر HTTP v1
-  Future<void> _sendFlashSaleNotification(
-      String discount, String productName,
-      {String productId = ''}) async {
-    try {
-      final http = await _sendFcmHttpNotification(
-        title: '⚡ تخفيض خاطف جديد!',
-        body: 'خصم $discount% على $productName لمدة محدودة! تسوق الآن.',
-        topic: 'flash_sales',
-        data: {
-          'type': 'flash_sale',
-          'productId': productId,
-          'title': '⚡ تخفيض خاطف جديد!',
-          'body': 'خصم $discount% على $productName لمدة محدودة! تسوق الآن.',
-        },
-      );
-      if (!http) {
-        debugPrint('⚠️ FCM topic send returned false');
-      }
-    } catch (e) {
-      debugPrint('⚠️ FCM send error: $e');
-    }
-  }
-
-  /// إرسال إشعار FCM عبر HTTP API (topic أو token)
-  Future<bool> _sendFcmHttpNotification({
-    required String title,
-    required String body,
-    String? topic,
-    String? token,
-    Map<String, String>? data,
-  }) async {
-    try {
-      final serverKey = AppConstants.fcmServerKey;
-      if (serverKey.isEmpty) return false;
-      final uri = Uri.parse('https://fcm.googleapis.com/fcm/send');
-      final message = <String, dynamic>{
-        if (topic != null) 'to': '/topics/$topic',
-        if (token != null) 'to': token,
-        'notification': {'title': title, 'body': body},
-        'data': data ?? {
-          'type': 'flash_sale',
-          'title': title,
-          'body': body,
-        },
-      };
-      final response = await http.post(
-        uri,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'key=$serverKey',
-        },
-        body: jsonEncode(message),
-      );
-      if (response.statusCode != 200) {
-        debugPrint('⚠️ FCM HTTP ${response.statusCode}: ${response.body}');
-        return false;
-      }
-      return true;
-    } catch (e) {
-      debugPrint('⚠️ FCM send exception: $e');
-      return false;
     }
   }
 }

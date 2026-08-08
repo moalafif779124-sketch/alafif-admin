@@ -60,6 +60,48 @@ async function _sendToTokens(fcmTokens, title, body, data) {
 }
 
 // ════════════════════════════════════════════
+//  3. إشعار التخفيضات الخاطفة — عند إنشاء تخفيض جديد
+//  (بث لموضوع /topics/flash_sales عبر خادم Firebase — لا يحتاج مفاتيح)
+// ════════════════════════════════════════════
+
+exports.sendFlashSaleNotification = onDocumentCreated(
+  {
+    document: 'flash_sales/{saleId}',
+    region: 'us-central1',
+  },
+  async (event) => {
+    const sale = event.data.data();
+    if (!sale || sale.isActive !== true) return;
+
+    const discount = sale.discountPercentage ?? 0;
+    const productName = sale.productName || 'منتجنا';
+    const productId = sale.productId || '';
+
+    const message = {
+      topic: 'flash_sales',
+      notification: {
+        title: '⚡ تخفيض خاطف جديد!',
+        body: `خصم ${discount}% على ${productName} لمدة محدودة! تسوق الآن.`,
+      },
+      data: {
+        type: 'flash_sale',
+        productId: productId,
+        title: '⚡ تخفيض خاطف جديد!',
+        body: `خصم ${discount}% على ${productName} لمدة محدودة! تسوق الآن.`,
+      },
+      android: { priority: 'high' },
+    };
+
+    try {
+      const response = await getMessaging().send(message);
+      console.log(`  ✅ Flash sale topic message sent: ${response}`);
+    } catch (error) {
+      console.error(`  ❌ Flash sale topic send failed: ${error.message}`);
+    }
+  }
+);
+
+// ════════════════════════════════════════════
 //  1. إشعار للعميل — عند تحديث حالة الطلب
 // ════════════════════════════════════════════
 

@@ -80,7 +80,7 @@ class _AdminFlashSaleScreenState extends State<AdminFlashSaleScreen> {
         Navigator.of(context).pop(true);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-              content: Text('✅ تم إنشاء التخفيض وإرسال إشعار للمستخدمين'),
+              content: Text('✅ تم إنشاء التخفيض — سيتم إشعار المستخدمين تلقائياً'),
               backgroundColor: AppColors.success,
               behavior: SnackBarBehavior.floating),
         );
