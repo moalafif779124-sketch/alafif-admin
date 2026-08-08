@@ -1,74 +1,37 @@
-// ALAFIF - FIREBASE SECURITY RULES (Production)
-// ============================================================
-// HOW TO PUBLISH:
-//   1. Firebase Console -> https://console.firebase.google.com
-//   2. Project: alafif-newform
-//   3. Firestore Database -> Rules tab
-//   4. Delete existing rules, paste EVERYTHING below, click Publish
-//
-// NOTE: comments are in ENGLISH on purpose - the Firebase Rules
-// parser rejects Arabic text inside comments (token recognition
-// error). Rule logic is unchanged.
-//
-// IMPORTANT - OTP MIGRATION NOTE:
-//   OTP (WhatsApp) login now creates a Firebase Auth (anonymous)
-//   session. User documents use the Firebase uid. Old accounts are
-//   stored under "phone_<number>" - the migration exception below
-//   (line: users block) lets any signed-in user READ legacy
-//   phone_* docs so the app can migrate them to the new uid on
-//   first login. Remove that exception after migration completes.
-// ============================================================
-
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // ============ HELPER FUNCTIONS ============
-
-    // Is the user signed in via Firebase Auth?
     function isSignedIn() {
       return request.auth != null;
     }
-
-    // Is the user an admin? (reads their doc in users/{uid},
-    // checks isAdmin == true)
     function isAdmin() {
       return isSignedIn() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
     }
-
-    // Does the document belong to the current user?
     function isOwner(uid) {
       return isSignedIn() && request.auth.uid == uid;
     }
 
-    // ============ PUBLIC CATALOGS: read for all, write admin-only ============
-
-    // Products - visible to everyone, editable by admins only
     match /products/{docId} {
       allow read: if true;
       allow write: if isAdmin();
     }
-
-    // Banners (carousel ads)
     match /banners/{docId} {
       allow read: if true;
       allow write: if isAdmin();
     }
-
-    // Categories
     match /categories/{docId} {
       allow read: if true;
       allow write: if isAdmin();
     }
-
-    // Flash sales
     match /flash_sales/{docId} {
       allow read: if true;
       allow write: if isAdmin();
     }
-
-    // Reviews - public read, users create their own only
+    match /app_config/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
     match /reviews/{docId} {
       allow read: if true;
       allow create: if isSignedIn() &&
@@ -76,61 +39,36 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
-    // App config (tabs...) - public read, admin write
-    match /app_config/{docId} {
-      allow read: if true;
-      allow write: if isAdmin();
-    }
-
-    // ============ USER DOCUMENTS: individual ownership ============
-
-    // users/{userId} - user reads/writes their own doc only, admin all
     match /users/{userId} {
       allow read, write: if isOwner(userId) || isAdmin();
-      // MIGRATION EXCEPTION: any signed-in user may READ legacy
-      // phone_* docs so the app can migrate the account to the new
-      // Firebase uid on first login. REMOVE THIS LINE after all
-      // users have migrated.
       allow read: if isSignedIn() && userId.startsWith('phone_');
     }
-
-    // orders/{orderId} - customer reads/updates own orders, admin all
     match /orders/{orderId} {
       allow create: if isSignedIn() &&
         request.resource.data.userId == request.auth.uid;
       allow read, update: if isOwner(resource.data.userId) || isAdmin();
       allow delete: if isAdmin();
     }
-
-    // addresses - user's delivery addresses
     match /addresses/{docId} {
       allow create: if isSignedIn() &&
         request.resource.data.userId == request.auth.uid;
       allow read, update, delete: if isOwner(resource.data.userId) || isAdmin();
     }
-
-    // carts - user's shopping cart
     match /carts/{docId} {
       allow create: if isSignedIn() &&
         request.resource.data.userId == request.auth.uid;
       allow read, update, delete: if isOwner(resource.data.userId) || isAdmin();
     }
-
-    // wishlists - user's favorites
     match /wishlists/{docId} {
       allow create: if isSignedIn() &&
         request.resource.data.userId == request.auth.uid;
       allow read, update, delete: if isOwner(resource.data.userId) || isAdmin();
     }
-
-    // points_history - read own only, write admin/system
     match /points_history/{docId} {
       allow read: if isOwner(resource.data.userId) || isAdmin();
       allow write: if isAdmin();
     }
 
-    // ============ ADMIN CATCH-ALL ============
-    // Any document in any collection not listed above - admin only
     match /{document=**} {
       allow read, write: if isAdmin();
     }
