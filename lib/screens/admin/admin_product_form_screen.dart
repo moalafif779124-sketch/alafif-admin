@@ -46,6 +46,15 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
   bool _isNewArrival = false;
   bool _hasDiscount = false;
 
+  /// خيارات العرض الإضافية (خريطة أعلام)
+  final Map<String, bool> _displayOptions = {
+    'eid': false,
+    'winter': false,
+    'new': false,
+    'offers': false,
+    'limited': false,
+  };
+
   // الصور
   final List<String> _imageUrls = [];
   bool _uploadingImage = false;
@@ -126,6 +135,9 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
     _isFeatured = p['isFeatured'] ?? false;
     _isNewArrival = p['isNewArrival'] ?? false;
     _hasDiscount = p['hasDiscount'] ?? false;
+    _displayOptions.addAll(
+      Map<String, bool>.from(p['displayOptions'] ?? const {}),
+    );
     _discountPercentageController.text = (p['discountPercentage'] ?? 0).toString();
     _brandController.text = p['brand'] ?? 'ALAFIF NEWFORM';
     _materialController.text = p['material'] ?? '';
@@ -205,6 +217,7 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
       'isFeatured': _isFeatured,
       'isNewArrival': _isNewArrival,
       'hasDiscount': _hasDiscount,
+      'displayOptions': _displayOptions,
       'discountPercentage': int.tryParse(_discountPercentageController.text.trim()) ?? 0,
       'brand': _brandController.text.trim(),
       'material': _materialController.text.trim(),
@@ -771,6 +784,31 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
                 activeColor: AppColors.primary,
                 contentPadding: EdgeInsets.zero,
               ),
+              _displayOptionTile(
+                key: 'eid',
+                title: 'ملابس العيد',
+                icon: Icons.celebration_outlined,
+              ),
+              _displayOptionTile(
+                key: 'winter',
+                title: 'ملابس الشتاء',
+                icon: Icons.ac_unit_outlined,
+              ),
+              _displayOptionTile(
+                key: 'new',
+                title: 'جديد العفيف نيوفورم',
+                icon: Icons.fiber_new_outlined,
+              ),
+              _displayOptionTile(
+                key: 'offers',
+                title: 'عروض وتخفيضات',
+                icon: Icons.local_offer_outlined,
+              ),
+              _displayOptionTile(
+                key: 'limited',
+                title: 'كمية محدودة',
+                icon: Icons.inventory_2_outlined,
+              ),
               const SizedBox(height: 20),
 
               // معلومات إضافية
@@ -850,6 +888,25 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
         fontWeight: FontWeight.bold,
         color: AppColors.primary,
       ),
+    );
+  }
+
+  /// صف تبديل (Switch) لخيار عرض — يخزّن القيمة في _displayOptions
+  Widget _displayOptionTile({
+    required String key,
+    required String title,
+    required IconData icon,
+  }) {
+    return SwitchListTile(
+      secondary: Icon(icon, color: AppColors.primary, size: 22),
+      title: Text(
+        title,
+        style: const TextStyle(fontSize: 14),
+      ),
+      value: _displayOptions[key] ?? false,
+      onChanged: (v) => setState(() => _displayOptions[key] = v),
+      activeColor: AppColors.primary,
+      contentPadding: EdgeInsets.zero,
     );
   }
 
