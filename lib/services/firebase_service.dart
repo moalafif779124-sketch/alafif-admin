@@ -435,6 +435,18 @@ class FirebaseService {
     }
   }
 
+  /// رفع فيديو المنتج إلى Firebase Storage
+  /// لا يوجد بديل base64 للفيديو — عند الفشل يُطلب رابط مباشر بدلاً من ذلك
+  Future<String> uploadVideo(String localPath, String fileName) async {
+    final file = io.File(localPath);
+    if (!await file.exists()) {
+      throw Exception('الملف غير موجود: $localPath');
+    }
+    final ref = storage.ref().child('products/videos/$fileName');
+    await ref.putFile(file, SettableMetadata(contentType: 'video/mp4'));
+    return await ref.getDownloadURL();
+  }
+
   // =================== إدارة المنتجات (Admin) ===================
 
   /// إضافة منتج جديد

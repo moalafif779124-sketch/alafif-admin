@@ -28,6 +28,7 @@ class Product {
   final String brand;
   final String material;
   final String careInstructions;
+  final String videoUrl;             // رابط فيديو المنتج (ريلز/اكتشف)
   final bool isActive;
   final DateTime createdAt;
 
@@ -58,6 +59,7 @@ class Product {
     this.brand = 'ALAFIF NEWFORM',
     this.material = '',
     this.careInstructions = '',
+    this.videoUrl = '',              // رابط فيديو المنتج (ريلز/اكتشف)
     this.isActive = true,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
@@ -99,6 +101,7 @@ class Product {
       brand: map['brand'] ?? 'ALAFIF NEWFORM',
       material: map['material'] ?? '',
       careInstructions: map['careInstructions'] ?? '',
+      videoUrl: map['videoUrl'] ?? '',
       isActive: map['isActive'] ?? true,
       createdAt: map['createdAt'] != null
           ? DateTime.fromMillisecondsSinceEpoch(map['createdAt'])
@@ -162,6 +165,7 @@ class Product {
       'brand': brand,
       'material': material,
       'careInstructions': careInstructions,
+      'videoUrl': videoUrl,
       'isActive': isActive,
       'createdAt': createdAt.millisecondsSinceEpoch,
     };

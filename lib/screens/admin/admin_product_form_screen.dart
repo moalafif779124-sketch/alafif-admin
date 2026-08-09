@@ -1,10 +1,9 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:video_player/video_player.dart';
 import '../../services/firebase_service.dart';
 import '../../config/colors.dart';
 import '../../config/constants.dart';
-import '../../models/product.dart';
 import '../../widgets/app_image.dart';
 
 /// شاشة إضافة/تعديل منتج
@@ -35,8 +34,10 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
   // ===== الحقول الجديدة =====
   late TextEditingController _stockQuantityController;
   late TextEditingController _sizeRangeController;
+  late TextEditingController _videoUrlController;
   List<String> _selectedColors = [];
   bool _isRangeSize = false;
+  bool _uploadingVideo = false;
   // =========================
 
   String? _categoryId;
@@ -80,6 +81,7 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
     _tagsController = TextEditingController();
     _stockQuantityController = TextEditingController();
     _sizeRangeController = TextEditingController();
+    _videoUrlController = TextEditingController();
 
     _loadCategories();
 
@@ -102,6 +104,7 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
     _tagsController.dispose();
     _stockQuantityController.dispose();
     _sizeRangeController.dispose();
+    _videoUrlController.dispose();
     for (final c in _stockVariantControllers.values) {
       c.dispose();
     }
@@ -145,6 +148,7 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
     _tagsController.text = (p['tags'] as List<dynamic>?)?.join(', ') ?? '';
     _stockQuantityController.text = (p['stockQuantity'] ?? 0).toString();
     _sizeRangeController.text = p['sizeRange'] ?? '';
+    _videoUrlController.text = p['videoUrl'] ?? '';
     // المخزون حسب المقاس
     _stockVariantControllers.clear();
     final savedVariants = (p['stockVariants'] as Map<String, dynamic>?) ?? {};
@@ -158,6 +162,44 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
             .toList() ??
         List<String>.from(p['colors'] ?? []);
     _isRangeSize = (p['sizeRange'] ?? '').isNotEmpty;
+  }
+
+  /// اختيار فيديو من المعرض ومحاولة رفعه إلى Firebase Storage
+  /// عند فشل الرفع (مثل عدم تفعيل Storage) يُطلب رابط مباشر بدلاً من ذلك
+  Future<void> _pickVideo() async {
+    try {
+      final picked = await ImagePicker().pickVideo(
+        source: ImageSource.gallery,
+        maxDuration: const Duration(seconds: 60),
+      );
+      if (picked == null) return;
+      setState(() => _uploadingVideo = true);
+
+      final fileName = 'video_${DateTime.now().millisecondsSinceEpoch}.mp4';
+      final url = await _firebase.uploadVideo(picked.path, fileName);
+
+      if (!mounted) return;
+      setState(() {
+        _videoUrlController.text = url;
+        _uploadingVideo = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تم رفع الفيديو بنجاح ✓'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    } catch (e) {
+      debugPrint('⚠️ Video upload failed: $e');
+      if (!mounted) return;
+      setState(() => _uploadingVideo = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تعذر رفع الفيديو — الصق رابط فيديو مباشر (MP4) بدلاً من ذلك'),
+          backgroundColor: AppColors.warning,
+        ),
+      );
+    }
   }
 
   Future<void> _save() async {
@@ -222,6 +264,7 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
       'brand': _brandController.text.trim(),
       'material': _materialController.text.trim(),
       'careInstructions': _careInstructionsController.text.trim(),
+      'videoUrl': _videoUrlController.text.trim(),
       'tags': tagList,
       'rating': 0,
       'reviewCount': 0,
@@ -767,6 +810,49 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
               ),
               const SizedBox(height: 16),
 
+              // ===== فيديو المنتج (ريلز/اكتشف) =====
+              _buildSectionTitle('فيديو المنتج (اكتشف)'),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _videoUrlController,
+                decoration: _inputDecoration(
+                  'رابط فيديو مباشر (MP4)',
+                  Icons.videocam_outlined,
+                ).copyWith(
+                  helperText: 'الصق رابط فيديو مباشر MP4 — يظهر في تبويب "اكتشف"',
+                ),
+                maxLines: 2,
+                keyboardType: TextInputType.url,
+              ),
+              const SizedBox(height: 10),
+              if (_videoUrlController.text.trim().isNotEmpty) ...[
+                _VideoPreview(
+                  key: ValueKey(_videoUrlController.text),
+                  url: _videoUrlController.text.trim(),
+                ),
+                const SizedBox(height: 10),
+              ],
+              OutlinedButton.icon(
+                onPressed: _uploadingVideo ? null : _pickVideo,
+                icon: _uploadingVideo
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.video_library_outlined, size: 18),
+                label: Text(
+                    _uploadingVideo ? 'جاري الرفع...' : 'اختيار فيديو ورفعه'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  side: const BorderSide(color: AppColors.primary),
+                ),
+              ),
+              const SizedBox(height: 16),
+
               // خيارات إضافية
               _buildSectionTitle('خيارات العرض'),
               const SizedBox(height: 8),
@@ -929,6 +1015,84 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
         borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    );
+  }
+}
+
+/// معاينة فيديو المنتج (رابط مباشر MP4) — تشغيل صامت متكرر
+class _VideoPreview extends StatefulWidget {
+  final String url;
+
+  const _VideoPreview({super.key, required this.url});
+
+  @override
+  State<_VideoPreview> createState() => _VideoPreviewState();
+}
+
+class _VideoPreviewState extends State<_VideoPreview> {
+  VideoPlayerController? _controller;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  Future<void> _init() async {
+    try {
+      final c = VideoPlayerController.networkUrl(Uri.parse(widget.url));
+      await c.initialize();
+      c.setLooping(true);
+      c.setVolume(0);
+      await c.play();
+      if (mounted) setState(() => _controller = c);
+    } catch (e) {
+      debugPrint('⚠️ Video preview failed: $e');
+      if (mounted) setState(() => _failed = true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_failed) {
+      return Container(
+        height: 100,
+        decoration: BoxDecoration(
+          color: AppColors.error.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Center(
+          child: Text(
+            'تعذر تحميل الفيديو — تحقق من الرابط',
+            style: TextStyle(fontSize: 12, color: AppColors.error),
+          ),
+        ),
+      );
+    }
+    if (_controller == null) {
+      return Container(
+        height: 100,
+        decoration: BoxDecoration(
+          color: AppColors.background,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      );
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: AspectRatio(
+        aspectRatio: _controller!.value.aspectRatio,
+        child: VideoPlayer(_controller!),
+      ),
     );
   }
 }

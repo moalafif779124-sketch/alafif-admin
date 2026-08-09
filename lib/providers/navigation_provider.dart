@@ -46,8 +46,9 @@ class NavigationProvider with ChangeNotifier {
     TabConfig(id: 'home', labelAr: 'الرئيسية', isActive: true, order: 0),
     TabConfig(id: 'category', labelAr: 'الفئات', isActive: true, order: 1),
     TabConfig(id: 'live', labelAr: 'المجتمع', isActive: true, order: 2),
-    TabConfig(id: 'cart', labelAr: 'السلة', isActive: true, order: 3),
-    TabConfig(id: 'profile', labelAr: 'حسابي', isActive: true, order: 4),
+    TabConfig(id: 'reels', labelAr: 'اكتشف', isActive: true, order: 3),
+    TabConfig(id: 'cart', labelAr: 'السلة', isActive: true, order: 4),
+    TabConfig(id: 'profile', labelAr: 'حسابي', isActive: true, order: 5),
   ];
 
   List<TabConfig> get tabs => _tabs.where((t) => t.isActive).toList();

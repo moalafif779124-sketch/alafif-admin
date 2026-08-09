@@ -111,6 +111,7 @@ class _TabManagementScreenState extends State<TabManagementScreen> {
       'home': Icons.home,
       'category': Icons.grid_view,
       'live': Icons.live_tv,
+      'reels': Icons.play_circle_fill,
       'cart': Icons.shopping_cart,
       'profile': Icons.person,
     };
@@ -255,6 +256,7 @@ class _TabManagementScreenState extends State<TabManagementScreen> {
       'home': 'الرئيسية',
       'category': 'الفئات',
       'live': 'المجتمع',
+      'reels': 'اكتشف',
       'cart': 'السلة',
       'profile': 'حسابي',
     };
