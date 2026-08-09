@@ -39,9 +39,10 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    // users - owner or admin; legacy phone_* docs readable for migration
     match /users/{userId} {
       allow read, write: if isOwner(userId) || isAdmin();
-      allow read: if isSignedIn() && userId.startsWith('phone_');
+      allow read: if isSignedIn() && userId.matches('^phone_.*');
     }
     match /orders/{orderId} {
       allow create: if isSignedIn() &&
@@ -69,6 +70,7 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // any other document - admin only
     match /{document=**} {
       allow read, write: if isAdmin();
     }
