@@ -13,6 +13,7 @@ import 'admin_analytics_screen.dart';
 import 'admin_users_screen.dart';
 import 'tab_management_screen.dart';
 import 'admin_flash_sale_screen.dart';
+import 'reels_manager_screen.dart';
 
 /// لوحة تحكم المدير — الصفحة الرئيسية للإدارة
 class AdminDashboard extends StatefulWidget {
@@ -309,6 +310,17 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const AdminProductsScreen()),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _AdminMenuItem(
+                      icon: Icons.play_circle_fill,
+                      title: 'إدارة فيديوهات اكتشف',
+                      subtitle: 'إضافة أو إزالة فيديوهات الريلز',
+                      color: AppColors.warning,
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ReelsManagerScreen()),
                       ),
                     ),
                     const SizedBox(height: 8),
