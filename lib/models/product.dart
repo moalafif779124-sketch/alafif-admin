@@ -29,6 +29,7 @@ class Product {
   final String material;
   final String careInstructions;
   final String videoUrl;             // رابط فيديو المنتج (ريلز/اكتشف)
+  final List<String> linkedOutfitIds; // معرفات منتجات الإطلالة المنسقة يدوياً (اختياري)
   final bool isActive;
   final DateTime createdAt;
 
@@ -60,6 +61,7 @@ class Product {
     this.material = '',
     this.careInstructions = '',
     this.videoUrl = '',              // رابط فيديو المنتج (ريلز/اكتشف)
+    this.linkedOutfitIds = const [],
     this.isActive = true,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
@@ -102,6 +104,7 @@ class Product {
       material: map['material'] ?? '',
       careInstructions: map['careInstructions'] ?? '',
       videoUrl: map['videoUrl'] ?? '',
+      linkedOutfitIds: List<String>.from(map['linkedOutfitIds'] ?? []),
       isActive: map['isActive'] ?? true,
       createdAt: map['createdAt'] != null
           ? DateTime.fromMillisecondsSinceEpoch(map['createdAt'])
@@ -166,6 +169,7 @@ class Product {
       'material': material,
       'careInstructions': careInstructions,
       'videoUrl': videoUrl,
+      'linkedOutfitIds': linkedOutfitIds,
       'isActive': isActive,
       'createdAt': createdAt.millisecondsSinceEpoch,
     };

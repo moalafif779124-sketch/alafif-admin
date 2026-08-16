@@ -40,6 +40,11 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
   bool _uploadingVideo = false;
   // =========================
 
+  // ===== تنسيق الإطلالة (اختياري) =====
+  List<String> _linkedOutfitIds = [];
+  List<Map<String, dynamic>> _allProducts = [];
+  bool _loadingProducts = false;
+
   String? _categoryId;
   List<String> _selectedSizes = [];
   final Map<String, TextEditingController> _stockVariantControllers = {};
@@ -84,6 +89,7 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
     _videoUrlController = TextEditingController();
 
     _loadCategories();
+    _loadAllProducts();
 
     if (_isEditMode) {
       _populateForm();
@@ -125,6 +131,45 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
     }
   }
 
+  /// جلب كل المنتجات النشطة لعرضها في منتقي تنسيق الإطلالة
+  Future<void> _loadAllProducts() async {
+    setState(() => _loadingProducts = true);
+    try {
+      final result = await _firebase.getProducts(limit: 500);
+      if (mounted) {
+        setState(() {
+          _allProducts = List<Map<String, dynamic>>.from(
+            result['products'] ?? [],
+          );
+          _loadingProducts = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingProducts = false);
+    }
+  }
+
+  /// منتقي الإطلالة — نافذة بحث واختيار حتى 3 منتجات مكملة
+  Future<void> _pickOutfitProducts() async {
+    final selected = await showModalBottomSheet<List<String>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => _OutfitPickerSheet(
+        products: _allProducts
+            .where((p) => p['id'] != widget.existingProduct?['id'])
+            .toList(),
+        initialSelected: _linkedOutfitIds,
+      ),
+    );
+    if (selected != null && mounted) {
+      setState(() => _linkedOutfitIds = selected);
+    }
+  }
+
   void _populateForm() {
     final p = widget.existingProduct!;
     _nameController.text = p['name'] ?? '';
@@ -162,6 +207,7 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
             .toList() ??
         List<String>.from(p['colors'] ?? []);
     _isRangeSize = (p['sizeRange'] ?? '').isNotEmpty;
+    _linkedOutfitIds = List<String>.from(p['linkedOutfitIds'] ?? []);
   }
 
   /// اختيار فيديو من المعرض ومحاولة رفعه إلى Firebase Storage
@@ -265,6 +311,7 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
       'material': _materialController.text.trim(),
       'careInstructions': _careInstructionsController.text.trim(),
       'videoUrl': _videoUrlController.text.trim(),
+      'linkedOutfitIds': _linkedOutfitIds,
       'tags': tagList,
       'rating': 0,
       'reviewCount': 0,
@@ -925,6 +972,68 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
                   helperText: 'مثال: ثوب, كلاسيك, قطني',
                 ),
               ),
+              const SizedBox(height: 24),
+
+              // ===== تنسيق الإطلالة (اختياري) =====
+              _buildSectionTitle('تنسيق الإطلالة (اختياري)'),
+              const SizedBox(height: 4),
+              Text(
+                'اختر حتى 3 منتجات مكملة تظهر في قسم "صمم إطلالتك الكاملة" '
+                'بشاشة المنتج — اتركها فارغة لإخفاء القسم',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textSecondary.withValues(alpha: 0.9),
+                ),
+              ),
+              const SizedBox(height: 10),
+              // المنتجات المختارة
+              if (_linkedOutfitIds.isNotEmpty) ...[
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _linkedOutfitIds.map((id) {
+                    final prod = _allProducts
+                        .where((p) => p['id'] == id)
+                        .toList();
+                    final name = prod.isNotEmpty
+                        ? (prod.first['name'] as String? ?? 'منتج')
+                        : 'منتج محذوف';
+                    return InputChip(
+                      label: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      deleteIcon: const Icon(Icons.close, size: 16),
+                      onDeleted: () => setState(
+                        () => _linkedOutfitIds.remove(id),
+                      ),
+                      backgroundColor: AppColors.accentLight,
+                      deleteIconColor: AppColors.error,
+                      side: const BorderSide(color: AppColors.primary, width: 0.5),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 10),
+              ],
+              OutlinedButton.icon(
+                onPressed: _loadingProducts ? null : _pickOutfitProducts,
+                icon: _loadingProducts
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.checkroom_outlined, size: 18),
+                label: Text(
+                  _linkedOutfitIds.isEmpty
+                      ? 'اختيار منتجات الإطلالة'
+                      : 'تعديل منتجات الإطلالة',
+                ),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  side: const BorderSide(color: AppColors.primary),
+                ),
+              ),
               const SizedBox(height: 32),
 
               // زر الحفظ
@@ -1093,6 +1202,270 @@ class _VideoPreviewState extends State<_VideoPreview> {
         aspectRatio: _controller!.value.aspectRatio,
         child: VideoPlayer(_controller!),
       ),
+    );
+  }
+}
+
+/// ورقة منتقي منتجات الإطلالة — بحث + اختيار حتى 3 منتجات
+class _OutfitPickerSheet extends StatefulWidget {
+  final List<Map<String, dynamic>> products;
+  final List<String> initialSelected;
+
+  const _OutfitPickerSheet({
+    required this.products,
+    required this.initialSelected,
+  });
+
+  @override
+  State<_OutfitPickerSheet> createState() => _OutfitPickerSheetState();
+}
+
+class _OutfitPickerSheetState extends State<_OutfitPickerSheet> {
+  static const int _maxPick = 3;
+  late final List<String> _selected;
+  String _query = '';
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = List<String>.from(widget.initialSelected);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  List<Map<String, dynamic>> get _filtered {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return widget.products;
+    return widget.products
+        .where((p) =>
+            (p['name'] as String? ?? '').toLowerCase().contains(q) ||
+            (p['categoryName'] as String? ?? '').toLowerCase().contains(q))
+        .toList();
+  }
+
+  void _toggle(String id) {
+    setState(() {
+      if (_selected.contains(id)) {
+        _selected.remove(id);
+      } else if (_selected.length < _maxPick) {
+        _selected.add(id);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('يمكن اختيار ${_maxPick} منتجات كحد أقصى'),
+            duration: const Duration(seconds: 2),
+            backgroundColor: AppColors.warning,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = _filtered;
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.85,
+      maxChildSize: 0.95,
+      builder: (context, scrollController) {
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 12,
+            bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // مقبض + عنوان
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.accent,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'تنسيق الإطلالة ✨',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'اختر حتى 3 منتجات مكملة تظهر في قسم "صمم إطلالتك الكاملة"',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 20),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+
+              // حقل البحث
+              TextField(
+                controller: _searchController,
+                onChanged: (v) => setState(() => _query = v),
+                decoration: InputDecoration(
+                  hintText: 'ابحث باسم المنتج أو الفئة...',
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  isDense: true,
+                  filled: true,
+                  fillColor: AppColors.background,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+
+              // عداد الاختيار
+              Row(
+                children: [
+                  Text(
+                    'المحدد: ${_selected.length} / $_maxPick',
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: _selected.isEmpty
+                        ? null
+                        : () {
+                            setState(_selected.clear);
+                          },
+                    child: const Text(
+                      'مسح الكل',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+
+              // القائمة
+              Expanded(
+                child: filtered.isEmpty
+                    ? const Center(
+                        child: Text(
+                          'لا توجد منتجات مطابقة',
+                          style: TextStyle(color: AppColors.textSecondary),
+                        ),
+                      )
+                    : ListView.separated(
+                        controller: scrollController,
+                        itemCount: filtered.length,
+                        separatorBuilder: (_, __) =>
+                            const Divider(height: 1, color: AppColors.divider),
+                        itemBuilder: (context, index) {
+                          final p = filtered[index];
+                          final id = p['id'] as String? ?? '';
+                          final isSelected = _selected.contains(id);
+                          final images = (p['images'] as List<dynamic>?) ?? [];
+                          final name = p['name'] as String? ?? '';
+                          final cat = p['categoryName'] as String? ?? '';
+                          final price =
+                              (p['price'] as num?)?.toDouble() ?? 0;
+                          return ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: AppImage(
+                                imageUrl: images.isNotEmpty
+                                    ? images.first as String
+                                    : '',
+                                width: 44,
+                                height: 44,
+                                fit: BoxFit.cover,
+                                backgroundColor: AppColors.accentLight,
+                              ),
+                            ),
+                            title: Text(
+                              name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            subtitle: Text(
+                              '$cat — ${price.toStringAsFixed(0)} ر.س',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 11),
+                            ),
+                            trailing: Icon(
+                              isSelected
+                                  ? Icons.check_circle
+                                  : Icons.radio_button_unchecked,
+                              color: isSelected
+                                  ? AppColors.primary
+                                  : AppColors.accent,
+                              size: 22,
+                            ),
+                            onTap: () => _toggle(id),
+                          );
+                        },
+                      ),
+              ),
+              const SizedBox(height: 8),
+
+              // زر التأكيد
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, _selected),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                child: Text(
+                  'تأكيد (${_selected.length})',
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
