@@ -559,6 +559,29 @@ class FirebaseService {
     await firestore.collection('orders').doc(orderId).update(update);
   }
 
+  // =================== طلبات توفر المخزن (Admin) ===================
+
+  /// بث مباشر لطلبات توفر المخزن — الأحدث أولاً
+  Stream<List<Map<String, dynamic>>> getRestockRequestsStream() {
+    return firestore
+        .collection('restock_requests')
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map((doc) {
+              final data = doc.data();
+              data['id'] = doc.id;
+              return data;
+            }).toList());
+  }
+
+  /// تحديث حالة طلب توفر إلى "تم توفره" (resolved)
+  Future<void> markRestockResolved(String requestId) async {
+    await firestore.collection('restock_requests').doc(requestId).update({
+      'status': 'resolved',
+      'resolvedAt': DateTime.now().millisecondsSinceEpoch,
+    });
+  }
+
   // =================== المستخدم (Admin) ===================
 
   Future<void> saveUser(Map<String, dynamic> userData) async {

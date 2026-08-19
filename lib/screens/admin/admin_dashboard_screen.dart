@@ -11,6 +11,7 @@ import 'admin_orders_screen.dart';
 import 'admin_banners_screen.dart';
 import 'admin_analytics_screen.dart';
 import 'admin_users_screen.dart';
+import 'restock_requests_screen.dart';
 import 'tab_management_screen.dart';
 import 'admin_flash_sale_screen.dart';
 import 'reels_manager_screen.dart';
@@ -343,6 +344,17 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const AdminOrdersScreen()),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _AdminMenuItem(
+                      icon: Icons.notifications_active,
+                      title: 'طلبات التوفر 🔔',
+                      subtitle: 'إدارة طلبات إشعار توفر المقاسات',
+                      color: AppColors.warning,
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const RestockRequestsScreen()),
                       ),
                     ),
                     const SizedBox(height: 8),
