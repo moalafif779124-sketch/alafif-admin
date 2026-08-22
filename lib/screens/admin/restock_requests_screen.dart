@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../config/colors.dart';
 import '../../services/firebase_service.dart';
+import '../../services/notification_server.dart';
 import '../../widgets/app_image.dart';
 
 /// شاشة إدارة طلبات توفر المخزن — تعرض المنتجات/المقاسات المطلوبة
@@ -44,17 +45,41 @@ class _RestockRequestsScreenState extends State<RestockRequestsScreen> {
   }
 
   /// تحديث حالة مجموعة طلبات إلى resolved (كل الطلبات المعلّقة للمجموعة)
+  /// ثم إرسال إشعار FCM لكل مستخدم ينتظر هذا المقاس عبر خادم Vercel.
   Future<void> _markGroupResolved(List<Map<String, dynamic>> requests) async {
     final pending = requests.where((r) => (r['status'] ?? 'pending') == 'pending').toList();
     if (pending.isEmpty) return;
     try {
+      final notifier = NotificationServer();
+      int notifiedUsers = 0;
+
       for (final r in pending) {
         await _firebase.markRestockResolved(r['id']);
+
+        // إشعار FCM عبر خادم Vercel (لا يُخزَّن حساب خدمة في التطبيق)
+        final userId = (r['userId'] as String?) ?? '';
+        final productId = (r['productId'] as String?) ?? '';
+        final productName = (r['productName'] as String?) ?? 'منتجنا';
+        final requestedSize = (r['requestedSize'] as String?) ?? '';
+        if (userId.isNotEmpty) {
+          final sent = await notifier.sendRestockNotification(
+            userId: userId,
+            productName: productName,
+            requestedSize: requestedSize,
+            productId: productId,
+          );
+          if (sent > 0) notifiedUsers++;
+        }
       }
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('تم تحديد ${pending.length} طلب كمُتوفّر ✅'),
+          content: Text(
+            notifiedUsers > 0
+                ? 'تم تحديد $pending.length طلب كمُتوفّر وإشعار $notifiedUsers مستخدم ✅'
+                : 'تم تحديد $pending.length طلب كمُتوفّر ✅',
+          ),
           backgroundColor: AppColors.success,
           behavior: SnackBarBehavior.floating,
         ),

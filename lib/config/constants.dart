@@ -8,6 +8,15 @@ class AppConstants {
   static const String appVersion = '1.0.0';
   static const String appTagline = 'الأناقة الرجالية الفاخرة';
 
+  // =========== خادم الإشعارات (Vercel Proxy) ===========
+  // 🔒 لا يُخزَّن أي حساب خدمة (Service Account) داخل التطبيق إطلاقاً.
+  // الخادم على Vercel يحمل السر ويولّد توكن FCM v1 — التطبيق يرسل
+  // فقط targetToken + نص الإشعار + مفتاح API المشترك.
+  static const String notificationServerUrl =
+      'https://alafif-notification-server.vercel.app/api/send-fcm';
+  static const String notificationApiKey =
+      'ALAFIF_NOTIF_API_KEY_PLACEHOLDER'; // ⚠️ استبدل بمفتاحك الفعلي قبل النشر
+
   // =========== معلومات المتجر ===========
   static const String companyName = 'العفيف نيوفورم للملابس الرجالية';
   static const String companyPhone = '+967123456789';
