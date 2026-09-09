@@ -21,14 +21,32 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
 
-  final List<Widget> _tabs = const [
-    AdminDashboard(),
-    AdminProductsScreen(),
-    AdminOrdersScreen(),
-    AdminBannersScreen(),
-    AdminFlashSaleScreen(),
-    AdminAnalyticsScreen(),
-  ];
+  // ===== تبويبات كسولة (Lazy Tabs) =====
+  // القائمة تنمو تدريجياً: التبويب يُنشأ عند أول زيارة له فقط.
+  // IndexedStack يبني ويُجهّز كل أبنائه دفعة واحدة، وكل شاشة تجلب
+  // بياناتها وتفكّك صورها فور إنشائها (منتجات، طلبات، بانرات base64،
+  // تخفيضات، إحصائيات). كان فتح لوحة التحكم ينشئ الست شاشات معاً —
+  // استهلاك ذاكرة عالٍ وفّر فرصة لسقوط التطبيق عند وصول كل البيانات
+  // بنفس اللحظة. الآن تُنشأ الشاشة عند أول نقرة، وتُحفظ حالتها بعدها.
+  final List<Widget> _tabCache = [];
+
+  static Widget _createTab(int index) {
+    return switch (index) {
+      0 => const AdminDashboard(),
+      1 => const AdminProductsScreen(),
+      2 => const AdminOrdersScreen(),
+      3 => const AdminBannersScreen(),
+      4 => const AdminFlashSaleScreen(),
+      _ => const AdminAnalyticsScreen(),
+    };
+  }
+
+  /// يضمن وجود التبويب الحالي في القائمة (يُنشئ غير المزار سابقاً)
+  void _ensureTab(int index) {
+    while (_tabCache.length <= index) {
+      _tabCache.add(_createTab(_tabCache.length));
+    }
+  }
 
   final List<IconData> _icons = const [
     Icons.dashboard_outlined,
@@ -56,10 +74,12 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
+    _ensureTab(_currentIndex);
+
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        body: IndexedStack(index: _currentIndex, children: _tabs),
+        body: IndexedStack(index: _currentIndex, children: _tabCache),
         bottomNavigationBar: NavigationBar(
           selectedIndex: _currentIndex,
           onDestinationSelected: (index) {

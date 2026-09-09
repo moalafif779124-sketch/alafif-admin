@@ -38,12 +38,19 @@ class _AdminFlashSaleScreenState extends State<AdminFlashSaleScreen> {
   }
 
   Future<void> _loadFlashSales() async {
-    setState(() => _isLoading = true);
-    final sales = await _firebase.getAllFlashSales();
-    if (mounted) setState(() {
-      _flashSales = sales;
-      _isLoading = false;
-    });
+    if (mounted) setState(() => _isLoading = true);
+    try {
+      final sales = await _firebase.getAllFlashSales();
+      if (mounted) {
+        setState(() {
+          _flashSales = sales;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('⚠️ Failed to load flash sales: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   Future<void> _saveFlashSale() async {
