@@ -15,7 +15,7 @@ class AppConstants {
   static const String notificationServerUrl =
       'https://alafif-notification-server.vercel.app/api/send-fcm';
   static const String notificationApiKey =
-      'ALAFIF_NOTIF_API_KEY_PLACEHOLDER'; // ⚠️ استبدل بمفتاحك الفعلي قبل النشر
+      'd66d9f728e4731afb2493ea361f20305c13f38f9ce51261f'; // نفس API_KEY في Vercel (production)
 
   // =========== معلومات المتجر ===========
   static const String companyName = 'العفيف نيوفورم للملابس الرجالية';
