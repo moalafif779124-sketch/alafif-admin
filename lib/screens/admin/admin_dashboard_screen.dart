@@ -12,6 +12,7 @@ import 'admin_banners_screen.dart';
 import 'admin_analytics_screen.dart';
 import 'admin_users_screen.dart';
 import 'restock_requests_screen.dart';
+import 'fitting_room_requests_screen.dart';
 import 'tab_management_screen.dart';
 import 'admin_flash_sale_screen.dart';
 import 'reels_manager_screen.dart';
@@ -27,6 +28,9 @@ class AdminDashboard extends StatefulWidget {
 class _AdminDashboardState extends State<AdminDashboard> {
   final FirebaseService _firebase = FirebaseService();
 
+  /// بث طلبات غرفة القياس — يُستخدم لشارة عدد الطلبات الجديدة
+  late final Stream<List<Map<String, dynamic>>> _fittingRoomStream;
+
   int _productCount = 0;
   int _orderCount = 0;
   int _categoryCount = 0;
@@ -36,6 +40,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   @override
   void initState() {
     super.initState();
+    _fittingRoomStream = _firebase.getFittingRoomRequestsStream();
     _loadStats();
   }
 
@@ -358,6 +363,32 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       ),
                     ),
                     const SizedBox(height: 8),
+                    StreamBuilder<List<Map<String, dynamic>>>(
+                      stream: _fittingRoomStream,
+                      builder: (context, snapshot) {
+                        final pending = (snapshot.data ?? [])
+                            .where((r) =>
+                                (r['status'] ?? 'pending') == 'pending')
+                            .length;
+                        return _AdminMenuItem(
+                          icon: Icons.checkroom,
+                          title: 'طلبات غرفة القياس 🏬',
+                          subtitle: pending > 0
+                              ? '$pending طلب جديد بانتظار الموظفين'
+                              : 'متابعة طلبات «إحضار لغرفة القياس»',
+                          color: AppColors.primary,
+                          badgeCount: pending,
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  const FittingRoomRequestsScreen(),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 8),
                     _AdminMenuItem(
                       icon: Icons.view_carousel,
                       title: 'البانرات',
@@ -507,12 +538,16 @@ class _AdminMenuItem extends StatelessWidget {
   final Color color;
   final void Function()? onTap;
 
+  /// شارة عدد (مثال: طلبات جديدة بانتظار المعالجة) — 0 = بدون شارة
+  final int badgeCount;
+
   const _AdminMenuItem({
     required this.icon,
     required this.title,
     required this.subtitle,
     required this.color,
     this.onTap,
+    this.badgeCount = 0,
   });
 
   @override
@@ -525,14 +560,43 @@ class _AdminMenuItem extends StatelessWidget {
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(icon, color: color),
+        leading: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: color),
+            ),
+            if (badgeCount > 0)
+              Positioned(
+                top: -6,
+                right: -6,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  constraints: const BoxConstraints(minWidth: 20),
+                  decoration: BoxDecoration(
+                    color: AppColors.error,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.white, width: 1.5),
+                  ),
+                  child: Text(
+                    '$badgeCount',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
         title: Text(
           title,

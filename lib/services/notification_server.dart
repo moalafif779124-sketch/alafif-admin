@@ -50,6 +50,58 @@ class NotificationServer {
     return sent;
   }
 
+  /// إشعار العميل بتغيّر حالة طلب غرفة القياس
+  /// (الوضع الذكي داخل الفرع → «إحضار لغرفة القياس»)
+  Future<int> sendFittingRoomStatusNotification({
+    required String userId,
+    required String productName,
+    required String size,
+    required String status,
+  }) async {
+    final tokens = await _firebase.getFcmTokens(userId);
+    if (tokens.isEmpty) {
+      debugPrint('⚠️ No FCM tokens for user $userId — skipping');
+      return 0;
+    }
+
+    String title;
+    String body;
+    switch (status) {
+      case 'accepted':
+        title = 'طلبك وصل لفريق الفرع 🛎️';
+        body = 'جاري إحضار $productName مقاس $size إلى غرفة القياس.';
+        break;
+      case 'ready':
+        title = 'طلبك في غرفة القياس ✨';
+        body = '$productName مقاس $size بانتظارك في غرفة القياس الآن.';
+        break;
+      case 'done':
+        title = 'شكراً لزيارتك 🌟';
+        body = 'تم تسليم $productName مقاس $size. نتشرف بخدمتك دائماً.';
+        break;
+      default:
+        title = 'تحديث على طلب غرفة القياس';
+        body = 'تم تحديث حالة طلب $productName مقاس $size.';
+    }
+
+    int sent = 0;
+    for (final token in tokens) {
+      final ok = await _postToServer(
+        targetToken: token,
+        title: title,
+        body: body,
+        data: {
+          'type': 'fitting_room',
+          'status': status,
+          'productName': productName,
+          'size': size,
+        },
+      );
+      if (ok) sent++;
+    }
+    return sent;
+  }
+
   /// POST إلى خادم Vercel — يرجع true عند نجاح الإرسال
   Future<bool> _postToServer({
     required String targetToken,

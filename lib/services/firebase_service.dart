@@ -582,6 +582,61 @@ class FirebaseService {
     });
   }
 
+  // =================== طلبات غرفة القياس (Admin) ===================
+
+  /// بث مباشر لطلبات غرفة القياس — الأحدث أولاً.
+  ///
+  /// استعلام بحقل واحد فقط (createdAt) — لا يحتاج فهرساً مركّباً،
+  /// والتصفية حسب الفرع/الحالة تحدث في الواجهة.
+  Stream<List<Map<String, dynamic>>> getFittingRoomRequestsStream() {
+    return firestore
+        .collection('fitting_room_requests')
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map((doc) {
+              final data = doc.data();
+              data['id'] = doc.id;
+              return data;
+            }).toList());
+  }
+
+  /// تحديث حالة طلب غرفة القياس:
+  /// pending → accepted (جاري الإحضار) → ready (في الغرفة) → done (تم التسليم)
+  /// ويمكن الإلغاء من أي حالة نشطة (cancelled).
+  Future<void> updateFittingRoomRequestStatus(
+    String requestId,
+    String status, {
+    String handledBy = '',
+  }) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final update = <String, dynamic>{
+      'status': status,
+      'updatedAt': now,
+    };
+
+    switch (status) {
+      case 'accepted':
+        update['acceptedAt'] = now;
+        break;
+      case 'ready':
+        update['readyAt'] = now;
+        break;
+      case 'done':
+        update['doneAt'] = now;
+        break;
+      case 'cancelled':
+        update['cancelledAt'] = now;
+        break;
+    }
+
+    if (handledBy.isNotEmpty) update['handledBy'] = handledBy;
+
+    await firestore
+        .collection('fitting_room_requests')
+        .doc(requestId)
+        .update(update);
+  }
+
   // =================== المستخدم (Admin) ===================
 
   Future<void> saveUser(Map<String, dynamic> userData) async {
