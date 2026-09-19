@@ -57,6 +57,7 @@ class NotificationServer {
     required String productName,
     required String size,
     required String status,
+    String requestId = '',
   }) async {
     final tokens = await _firebase.getFcmTokens(userId);
     if (tokens.isEmpty) {
@@ -93,6 +94,7 @@ class NotificationServer {
         data: {
           'type': 'fitting_room',
           'status': status,
+          'requestId': requestId,
           'productName': productName,
           'size': size,
         },

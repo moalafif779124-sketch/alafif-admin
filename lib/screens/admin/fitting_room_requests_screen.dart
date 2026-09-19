@@ -95,6 +95,7 @@ class _FittingRoomRequestsScreenState extends State<FittingRoomRequestsScreen> {
           productName: (request['productName'] as String?) ?? 'منتجك',
           size: (request['size'] as String?) ?? 'موحّد',
           status: newStatus,
+          requestId: id,
         );
       }
 
