@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../config/colors.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/alert_sound.dart';
 import '../../services/firebase_service.dart';
+import '../../services/fitting_room_cancellation_watcher.dart';
 import '../../services/notification_server.dart';
 import '../../widgets/app_image.dart';
 
@@ -43,7 +48,25 @@ class FittingRoomRequestsScreen extends StatefulWidget {
 class _FittingRoomRequestsScreenState extends State<FittingRoomRequestsScreen> {
   final FirebaseService _firebase = FirebaseService();
 
-  Stream<List<Map<String, dynamic>>>? _requestsStream;
+  /// مراقب إلغاء العميل — يشتغل على نفس البث
+  final FittingRoomCancellationWatcher _cancelWatcher =
+      FittingRoomCancellationWatcher();
+
+  StreamSubscription<List<Map<String, dynamic>>>? _subscription;
+
+  /// أحدث دفعة من البث (بلا سحب للتحديث — Firestore يدفع التغيير)
+  List<Map<String, dynamic>> _requests = const [];
+  bool _loading = true;
+  Object? _error;
+
+  /// إلغاءات العميل المكتشفة في هذه الجلسة (الأحدث أولاً) — لافتة حمراء ثابتة
+  final List<Map<String, dynamic>> _customerCancellations = [];
+
+  /// معرّفات الطلبات التي ألغاها العميل — لتمييز البطاقة باللون الأحمر
+  final Set<String> _customerCancelledIds = {};
+
+  /// أقصى عدد بنود معروضة في اللافتة
+  static const int _maxBannerItems = 3;
 
   /// فلتر الحالة: all / pending / active (accepted+ready) / closed (done+cancelled)
   String _statusFilter = 'all';
@@ -58,10 +81,82 @@ class _FittingRoomRequestsScreenState extends State<FittingRoomRequestsScreen> {
   void initState() {
     super.initState();
     _subscribe();
+    // تهيئة النغمة مسبقاً حتى لا تتأخر عند أول إلغاء
+    AlertSound.instance.warmUp();
   }
 
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    AlertSound.instance.dispose();
+    super.dispose();
+  }
+
+  /// اشتراك واحد على البث: يغذّي الواجهة *و* يكشف إلغاء العميل.
   void _subscribe() {
-    _requestsStream = _firebase.getFittingRoomRequestsStream();
+    _subscription?.cancel();
+    if (mounted) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
+
+    _subscription = _firebase.getFittingRoomRequestsStream().listen(
+          _onRequests,
+          onError: (Object e) {
+            if (!mounted) return;
+            setState(() {
+              _error = e;
+              _loading = false;
+            });
+          },
+        );
+  }
+
+  void _onRequests(List<Map<String, dynamic>> requests) {
+    // الإلغاءات الجديدة من العميل (الدفعة الأولى تُسجَّل بلا تنبيه)
+    final fresh =
+        _cancelWatcher.scan(requests).where(_isInBranchScope).toList();
+
+    if (!mounted) return;
+    setState(() {
+      _requests = requests;
+      _loading = false;
+      _error = null;
+    });
+
+    if (fresh.isNotEmpty) _alertCancellations(fresh);
+  }
+
+  /// نطاق التنبيه = فلتر الفرع الحالي (اختيار الموظف لفرع يحصر التنبيهات فيه)
+  bool _isInBranchScope(Map<String, dynamic> request) {
+    if (_branchFilter.isEmpty) return true;
+    return ((request['branchId'] as String?) ?? '') == _branchFilter;
+  }
+
+  /// صوت + اهتزاز + لافتة حمراء ثابتة (لا تختفي تلقائياً — الموظف يقرّها)
+  void _alertCancellations(List<Map<String, dynamic>> fresh) {
+    for (final r in fresh) {
+      final id = (r['id'] as String?) ?? '';
+      if (id.isEmpty || _customerCancelledIds.contains(id)) continue;
+      _customerCancelledIds.add(id);
+      _customerCancellations.insert(0, r);
+    }
+    while (_customerCancellations.length > _maxBannerItems) {
+      _customerCancellations.removeLast();
+    }
+
+    setState(() {});
+    HapticFeedback.heavyImpact();
+    AlertSound.instance.playCancellationChime(
+      requestId: (fresh.first['id'] as String?) ?? '',
+    );
+  }
+
+  /// إخفاء اللافتة فقط — يبقى تمييز البطاقات حتى نهاية الجلسة
+  void _dismissCancellationBanner() {
+    setState(() => _customerCancellations.clear());
   }
 
   // ==================== الإجراءات ====================
@@ -196,90 +291,149 @@ class _FittingRoomRequestsScreenState extends State<FittingRoomRequestsScreen> {
           backgroundColor: AppColors.primary,
           foregroundColor: Colors.white,
         ),
-        body: StreamBuilder<List<Map<String, dynamic>>>(
-          stream: _requestsStream,
-          builder: (context, snapshot) {
-            if (snapshot.hasError) {
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.error_outline,
-                          size: 48, color: AppColors.error),
-                      const SizedBox(height: 12),
-                      Text(
-                        'تعذّر تحميل الطلبات: ${snapshot.error}',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: AppColors.error),
-                      ),
-                      const SizedBox(height: 16),
-                      OutlinedButton.icon(
-                        onPressed: () => setState(_subscribe),
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('إعادة المحاولة'),
-                      ),
-                    ],
+        body: Column(
+          children: [
+            // لافتة الإلغاء تبقى ظاهرة فوق القائمة حتى يقرّها الموظف
+            if (_customerCancellations.isNotEmpty) _buildCancellationBanner(),
+            Expanded(child: _buildBody()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// لافتة حمراء ثابتة: «تم إلغاء الطلب من قبل العميل»
+  Widget _buildCancellationBanner() {
+    return Container(
+      width: double.infinity,
+      color: AppColors.error,
+      padding: const EdgeInsets.fromLTRB(14, 10, 4, 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.notification_important,
+            color: Colors.white,
+            size: 22,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'إلغاء من العميل — توقّف عن إحضار القطعة ⛔',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
-              );
-            }
-            if (!snapshot.hasData) {
-              return const Center(child: CircularProgressIndicator());
-            }
+                const SizedBox(height: 4),
+                ..._customerCancellations.map(
+                  (r) => Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      '• ${FittingRoomCancellationWatcher.cancellationMessage(r)}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'إخفاء التنبيه',
+            onPressed: _dismissCancellationBanner,
+            icon: const Icon(Icons.close, color: Colors.white, size: 18),
+          ),
+        ],
+      ),
+    );
+  }
 
-            final all = snapshot.data!;
-            final branches = <String, String>{};
-            for (final r in all) {
-              final id = (r['branchId'] as String?) ?? '';
-              final name = (r['branchName'] as String?) ?? '';
-              if (id.isNotEmpty && name.isNotEmpty) branches[id] = name;
-            }
-            if (_branchFilter.isNotEmpty && !branches.containsKey(_branchFilter)) {
-              _branchFilter = '';
-            }
-
-            final filtered = all.where((r) {
-              final status = (r['status'] ?? 'pending') as String;
-              final branch = (r['branchId'] as String?) ?? '';
-              final statusOk = switch (_statusFilter) {
-                'pending' => status == 'pending',
-                'active' => status == 'accepted' || status == 'ready',
-                'closed' => status == 'done' || status == 'cancelled',
-                _ => true,
-              };
-              final branchOk =
-                  _branchFilter.isEmpty || branch == _branchFilter;
-              return statusOk && branchOk;
-            }).toList();
-
-            // الأحدث أولاً (البث مرتّب مسبقاً — هذا تأكيد للحماية)
-            filtered.sort((a, b) => _epoch(b, 'createdAt')
-                .compareTo(_epoch(a, 'createdAt')));
-
-            return RefreshIndicator(
-              onRefresh: () async => setState(_subscribe),
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  _buildSummaryCard(all),
-                  const SizedBox(height: 16),
-                  _buildStatusFilters(all),
-                  if (branches.length > 1) ...[
-                    const SizedBox(height: 8),
-                    _buildBranchFilters(branches),
-                  ],
-                  const SizedBox(height: 16),
-                  if (filtered.isEmpty)
-                    _buildEmptyState(all.isEmpty)
-                  else
-                    ..._buildGroupedCards(filtered, branches.length > 1),
-                ],
+  Widget _buildBody() {
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline,
+                  size: 48, color: AppColors.error),
+              const SizedBox(height: 12),
+              Text(
+                'تعذّر تحميل الطلبات: $_error',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppColors.error),
               ),
-            );
-          },
+              const SizedBox(height: 16),
+              OutlinedButton.icon(
+                onPressed: _subscribe,
+                icon: const Icon(Icons.refresh),
+                label: const Text('إعادة المحاولة'),
+              ),
+            ],
+          ),
         ),
+      );
+    }
+    if (_loading && _requests.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final all = _requests;
+    final branches = <String, String>{};
+    for (final r in all) {
+      final id = (r['branchId'] as String?) ?? '';
+      final name = (r['branchName'] as String?) ?? '';
+      if (id.isNotEmpty && name.isNotEmpty) branches[id] = name;
+    }
+    if (_branchFilter.isNotEmpty && !branches.containsKey(_branchFilter)) {
+      _branchFilter = '';
+    }
+
+    final filtered = all.where((r) {
+      final status = (r['status'] ?? 'pending') as String;
+      final branch = (r['branchId'] as String?) ?? '';
+      final statusOk = switch (_statusFilter) {
+        'pending' => status == 'pending',
+        'active' => status == 'accepted' || status == 'ready',
+        'closed' => status == 'done' || status == 'cancelled',
+        _ => true,
+      };
+      final branchOk =
+          _branchFilter.isEmpty || branch == _branchFilter;
+      return statusOk && branchOk;
+    }).toList();
+
+    // الأحدث أولاً (البث مرتّب مسبقاً — هذا تأكيد للحماية)
+    filtered.sort((a, b) =>
+        _epoch(b, 'createdAt').compareTo(_epoch(a, 'createdAt')));
+
+    return RefreshIndicator(
+      onRefresh: () async => _subscribe(),
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          _buildSummaryCard(all),
+          const SizedBox(height: 16),
+          _buildStatusFilters(all),
+          if (branches.length > 1) ...[
+            const SizedBox(height: 8),
+            _buildBranchFilters(branches),
+          ],
+          const SizedBox(height: 16),
+          if (filtered.isEmpty)
+            _buildEmptyState(all.isEmpty)
+          else
+            ..._buildGroupedCards(filtered, branches.length > 1),
+        ],
       ),
     );
   }
@@ -576,6 +730,8 @@ class _FittingRoomRequestsScreenState extends State<FittingRoomRequestsScreen> {
     final sessionId = (r['sessionId'] as String?) ?? '';
     final note = (r['note'] as String?) ?? '';
     final createdAt = _epoch(r, 'createdAt');
+    // ألغاه العميل في هذه الجلسة؟ → إبراز أحمر + وسم تحذيري
+    final customerCancelled = _customerCancelledIds.contains(id);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -583,7 +739,12 @@ class _FittingRoomRequestsScreenState extends State<FittingRoomRequestsScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: style.color.withValues(alpha: 0.35)),
+        border: Border.all(
+          color: customerCancelled
+              ? AppColors.error
+              : style.color.withValues(alpha: 0.35),
+          width: customerCancelled ? 1.6 : 1,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -630,6 +791,8 @@ class _FittingRoomRequestsScreenState extends State<FittingRoomRequestsScreen> {
                       spacing: 6,
                       runSpacing: 6,
                       children: [
+                        if (customerCancelled)
+                          _buildChip('ألغى العميل الطلب ⛔', AppColors.error),
                         if (size.isNotEmpty) _buildChip('المقاس $size',
                             AppColors.primary),
                         if (color.isNotEmpty)

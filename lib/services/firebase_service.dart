@@ -603,6 +603,9 @@ class FirebaseService {
   /// تحديث حالة طلب غرفة القياس:
   /// pending → accepted (جاري الإحضار) → ready (في الغرفة) → done (تم التسليم)
   /// ويمكن الإلغاء من أي حالة نشطة (cancelled).
+  ///
+  /// `cancelledBy` يوضّح مصدر الإلغاء: تطبيق الموظف يكتب `staff`، وتطبيق
+  /// العميل يكتب `customer` — وعلى هذا الحقل يعتمد تنبيه الإلغاء عند الموظف.
   Future<void> updateFittingRoomRequestStatus(
     String requestId,
     String status, {
@@ -626,6 +629,7 @@ class FirebaseService {
         break;
       case 'cancelled':
         update['cancelledAt'] = now;
+        update['cancelledBy'] = 'staff';
         break;
     }
 

@@ -37,6 +37,9 @@ dependencies:
   video_player: ^2.9.2
   path_provider: ^2.1.4
   url_launcher: ^6.3.1
+
+  # Audio (تنبيهات الموظفين — نغمة إلغاء العميل)
+  audioplayers: ^6.1.0
   
   # Payments
   http: ^1.2.2
@@ -61,5 +64,6 @@ flutter:
   assets:
     - assets/images/
     - assets/fonts/
+    - assets/sounds/
   
   fonts: []
