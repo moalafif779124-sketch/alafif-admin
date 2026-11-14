@@ -1,5 +1,3 @@
-import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../services/firebase_service.dart';
@@ -42,23 +40,27 @@ class _AdminBannersScreenState extends State<AdminBannersScreen> {
     }
   }
 
-  /// التقاط صورة من المعرض وضغطها إلى Base64 (JPEG مضغوط)
+  /// التقاط صورة من المعرض وضغطها إلى JPEG Base64 مضغوط.
+  ///
+  /// البانرات تُقرأ في كل فتح للتطبيق (897KB قبل الضغط، وبانر واحد 219KB)،
+  /// وكانت الصور تُخزَّن كما هي — بل PNG بلا أي ضغط لأن image_picker لا
+  /// يعيد ترميز PNG. الآن نعيد الترميز دائماً: 1080px عرضاً أقصى (البانر
+  /// بعرض الشاشة وارتفاع 200dp) وJPEG q66 → 50-95KB.
   Future<String?> _pickAndCompressImage() async {
     try {
       final XFile? picked = await _picker.pickImage(
         source: ImageSource.gallery,
-        maxWidth: 1024,
-        maxHeight: 1024,
-        imageQuality: 75,
+        maxWidth: 1600,
+        maxHeight: 1600,
+        imageQuality: 90,
       );
       if (picked == null) return null;
 
-      final bytes = await picked.readAsBytes();
-      // تحويل إلى Base64 مع البادئة
-      final b64 = base64Encode(bytes);
-      final ext = picked.name.split('.').last.toLowerCase();
-      final mime = ext == 'png' ? 'image/png' : 'image/jpeg';
-      return 'data:$mime;base64,$b64';
+      return await FirebaseService.compressToBase64(
+        picked.path,
+        maxPx: 1080,
+        quality: 66,
+      );
     } catch (e) {
       debugPrint('⚠️ Image pick error: $e');
       return null;
