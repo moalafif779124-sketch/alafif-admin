@@ -289,6 +289,30 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
+                                  // وسم قطعة الطقم — ليعرف الموظف أي القطع خُصمت
+                                  if (item.isBundled) ...[
+                                    const SizedBox(height: 4),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.success
+                                            .withValues(alpha: 0.12),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        item.bundleSource == 'stylist'
+                                            ? '🏷️ توصية المصمم الذكي'
+                                            : '🏷️ من الطقم المنسّق',
+                                        style: const TextStyle(
+                                          fontSize: 10.5,
+                                          color: AppColors.success,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                   const SizedBox(height: 2),
                                   Row(
                                     children: [
@@ -412,13 +436,16 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
                       ],
                     ),
                     const SizedBox(height: 4),
-                    if (order.discount > 0)
+                    if (order.discount > 0) ...[
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text(
-                            'الخصم',
-                            style: TextStyle(fontSize: 13, color: AppColors.success),
+                          Text(
+                            order.bundle != null
+                                ? 'خصم الطقم (${(((order.bundle!['rate'] ?? 0) as num) * 100).round()}%)'
+                                : 'الخصم',
+                            style: const TextStyle(
+                                fontSize: 13, color: AppColors.success),
                           ),
                           Text(
                             '-${AppConstants.currency}${order.discount.toStringAsFixed(0)}',
@@ -429,6 +456,23 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
                           ),
                         ],
                       ),
+                      // تفصيل الطقم: الشريحة وعدد القطع (كما كتبها تطبيق العميل)
+                      if (order.bundle != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Align(
+                            alignment: AlignmentDirectional.centerStart,
+                            child: Text(
+                              '🏷️ طقم ${order.bundle!['tierLabel'] ?? ''} · '
+                              '${order.bundle!['pieces'] ?? 0} قطعة',
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                color: AppColors.success,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                     const SizedBox(height: 4),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,

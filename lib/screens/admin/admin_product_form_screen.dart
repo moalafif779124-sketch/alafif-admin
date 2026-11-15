@@ -180,6 +180,12 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
     _selectedSizes = List<String>.from(p['sizes'] ?? []);
     _imageUrls.clear();
     _imageUrls.addAll(List<String>.from(p['images'] ?? []));
+    if (_imageUrls.isEmpty) {
+      // منتجات جديدة البنية: الصور الكاملة في product_images/{id} والمصغّرة هنا.
+      final th = (p['thumb'] ?? '') as String;
+      if (th.isNotEmpty) _imageUrls.add(th);
+      _loadGalleryIntoForm(p['id'] as String);
+    }
     _isFeatured = p['isFeatured'] ?? false;
     _isNewArrival = p['isNewArrival'] ?? false;
     _hasDiscount = p['hasDiscount'] ?? false;
@@ -248,6 +254,22 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
     }
   }
 
+  /// يجلب المعرض الكامل للمنتج عند التعديل — بدونه كان الحفظ يمسح الصور
+  /// (لأن مستند المنتج يحمل المصغّرة فقط).
+  Future<void> _loadGalleryIntoForm(String productId) async {
+    try {
+      final imgs = await _firebase.getProductGallery(productId);
+      if (!mounted || imgs.isEmpty) return;
+      setState(() {
+        _imageUrls
+          ..clear()
+          ..addAll(imgs);
+      });
+    } catch (e) {
+      debugPrint('⚠️ load gallery: $e');
+    }
+  }
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -285,7 +307,12 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
       'categoryName': selectedCategory['name'] ?? '',
       'sizes': _selectedSizes,
       'sizeRange': _isRangeSize ? _sizeRangeController.text.trim() : '',
-      'images': imageList,
+      // الصور الكاملة تُحفظ في product_images/{id} بعد معرفة معرّف المنتج؛
+      // مستند المنتج يحمل المصغّرة فقط كي يبقى الكتالوج صغيراً.
+      'images': const <String>[],
+      'thumb': imageList.isEmpty
+          ? ''
+          : await FirebaseService.base64ToThumb(imageList.first),
       'colors': _selectedColors,
       'colorOptions': _selectedColors.map((hex) {
         final match = AppConstants.colorOptions.cast<Map<String, dynamic>>().firstWhere(
@@ -319,7 +346,9 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
 
     try {
       if (_isEditMode) {
-        await _firebase.updateProduct(widget.existingProduct!['id'], data);
+        final pid = widget.existingProduct!['id'] as String;
+        await _firebase.updateProduct(pid, data);
+        await _firebase.saveProductGallery(pid, imageList);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -331,7 +360,8 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
         }
       } else {
         data['isActive'] = true;
-        await _firebase.addProduct(data);
+        final newId = await _firebase.addProduct(data);
+        await _firebase.saveProductGallery(newId, imageList);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -363,17 +393,18 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
       final picker = ImagePicker();
       final pickedFile = await picker.pickImage(
         source: ImageSource.gallery,
-        maxWidth: 1024,
-        maxHeight: 1024,
-        imageQuality: 80,
+        maxWidth: 1400,
+        maxHeight: 1400,
+        imageQuality: 90,
       );
 
       if (pickedFile == null) return;
 
       setState(() => _uploadingImage = true);
 
-      final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final downloadUrl = await _firebase.uploadImage(pickedFile.path, fileName);
+      // ضغط محلي (بلا Storage): 900px / q60 → عشرات الكيلوبايتات فقط
+      final downloadUrl =
+          await FirebaseService.compressToBase64(pickedFile.path);
 
       setState(() {
         _imageUrls.add(downloadUrl);

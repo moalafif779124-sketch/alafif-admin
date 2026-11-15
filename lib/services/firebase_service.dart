@@ -7,6 +7,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io' as io;
 import 'package:flutter/foundation.dart';
+import 'package:image/image.dart' as img_pkg;
 import '../config/constants.dart';
 
 /// خدمة Firebase المركزية
@@ -406,6 +407,74 @@ class FirebaseService {
 
   // =================== رفع الصور ===================
 
+  /// ضغط صورة محلية وإرجاعها base64 (بلا Storage):
+  /// 900px عرضاً أقصى، JPEG q60 → ~40-80KB بدل 300-500KB.
+  static Future<String> compressToBase64(
+    String localPath, {
+    int maxPx = 900,
+    int quality = 60,
+  }) async {
+    final bytes = await io.File(localPath).readAsBytes();
+    var img = img_pkg.decodeImage(bytes);
+    if (img == null) {
+      return 'data:image/jpeg;base64,${base64Encode(bytes)}';
+    }
+    final w = img.width, h = img.height;
+    if (w > maxPx || h > maxPx) {
+      final scale = maxPx / (w > h ? w : h);
+      img = img_pkg.copyResize(
+        img,
+        width: (w * scale).round(),
+        height: (h * scale).round(),
+        interpolation: img_pkg.Interpolation.average,
+      );
+    }
+    final out = img_pkg.encodeJpg(img, quality: quality);
+    return 'data:image/jpeg;base64,${base64Encode(out)}';
+  }
+
+  /// إعادة ترميز صورة base64 موجودة إلى صورة مصغّرة (thumb).
+  static Future<String> base64ToThumb(String dataUri,
+      {int maxPx = 240, int quality = 70}) async {
+    try {
+      if (!dataUri.startsWith('data:image')) return dataUri;
+      final bytes = base64Decode(dataUri.split(',').last);
+      var img = img_pkg.decodeImage(bytes);
+      if (img == null) return '';
+      final w = img.width, h = img.height;
+      if (w > maxPx || h > maxPx) {
+        final scale = maxPx / (w > h ? w : h);
+        img = img_pkg.copyResize(img,
+            width: (w * scale).round(), height: (h * scale).round());
+      }
+      return 'data:image/jpeg;base64,${base64Encode(img_pkg.encodeJpg(img, quality: quality))}';
+    } catch (e) {
+      debugPrint('⚠️ base64ToThumb: $e');
+      return '';
+    }
+  }
+
+  /// معرض الصور الكامل — خارج مستند المنتج (كي لا يتضخّم الكتالوج).
+  Future<void> saveProductGallery(
+      String productId, List<String> images) async {
+    await firestore.collection('product_images').doc(productId).set({
+      'images': images,
+      'updatedAt': DateTime.now().millisecondsSinceEpoch,
+    }, SetOptions(merge: true));
+  }
+
+  Future<List<String>> getProductGallery(String productId) async {
+    try {
+      final doc =
+          await firestore.collection('product_images').doc(productId).get();
+      final imgs = doc.data()?['images'];
+      if (imgs is List) return imgs.whereType<String>().toList();
+    } catch (e) {
+      debugPrint('⚠️ getProductGallery: $e');
+    }
+    return const <String>[];
+  }
+
   /// رفع صورة إلى Firebase Storage (أو تخزينها كـ base64 إذا كان التخزين غير مفعل)
   Future<String> uploadImage(String localPath, String fileName) async {
     try {
@@ -425,9 +494,9 @@ class FirebaseService {
         // نخزن الصورة كـ base64 داخل Firestore مباشرة
         debugPrint('⚠️ Firebase Storage failed, using base64 fallback: $storageError');
         
-        final bytes = await file.readAsBytes();
-        final b64 = base64Encode(bytes);
-        return 'data:image/jpeg;base64,$b64';
+        // ضغط إلزامي: بلا Storage تكون الصورة داخل مستند Firestore
+        // (سقف 1MB) — الصورة الخام 300-500KB تخنق الكتالوج.
+        return await compressToBase64(localPath, maxPx: 900, quality: 60);
       }
     } catch (e) {
       debugPrint('⚠️ uploadImage error: $e');
