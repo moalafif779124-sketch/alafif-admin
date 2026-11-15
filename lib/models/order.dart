@@ -18,6 +18,17 @@ class Order {
   final String paymentMethod;
   final String paymentStatus;
   final String? paymentReference;
+
+  /// إثبات التحويل كما يكتبه العميل في شاشة الدفع (كريمي/جيب):
+  /// رقم العملية + طريقة التحويل + صورة الإشعار (base64).
+  /// كانت تُحفظ في مستند الطلب ولا تُعرض للإدارة إطلاقاً — فكانت المراجعة عمياء.
+  final String? transactionRef;
+  final String? transferMethod;
+  final String? receiptImageBase64;
+
+  /// كود الخصم المستخدم في الطلب (إن وُجد).
+  final String? couponCode;
+
   final AddressInfo shippingAddress;
   final String? notes;
   final DateTime createdAt;
@@ -39,6 +50,10 @@ class Order {
     required this.paymentMethod,
     required this.paymentStatus,
     this.paymentReference,
+    this.transactionRef,
+    this.transferMethod,
+    this.receiptImageBase64,
+    this.couponCode,
     required this.shippingAddress,
     this.notes,
     required this.createdAt,
@@ -101,6 +116,14 @@ class Order {
       paymentMethod: map['paymentMethod'] ?? '',
       paymentStatus: map['paymentStatus'] ?? 'pending',
       paymentReference: map['paymentReference'],
+      transactionRef: (map['transactionRef'] as String?)?.trim().isEmpty ?? true
+          ? null
+          : (map['transactionRef'] as String).trim(),
+      transferMethod: map['transferMethod'],
+      receiptImageBase64: (map['receiptImageBase64'] as String?)?.isEmpty ?? true
+          ? null
+          : map['receiptImageBase64'],
+      couponCode: map['couponCode'],
       shippingAddress: AddressInfo.fromMap(map['shippingAddress'] ?? {}),
       notes: map['notes'],
       createdAt: map['createdAt'] != null
@@ -131,6 +154,10 @@ class Order {
       'paymentMethod': paymentMethod,
       'paymentStatus': paymentStatus,
       'paymentReference': paymentReference,
+      'transactionRef': transactionRef,
+      'transferMethod': transferMethod,
+      'receiptImageBase64': receiptImageBase64,
+      'couponCode': couponCode,
       'shippingAddress': shippingAddress.toMap(),
       'notes': notes,
       'createdAt': createdAt.millisecondsSinceEpoch,

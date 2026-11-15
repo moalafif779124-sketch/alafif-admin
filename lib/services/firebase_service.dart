@@ -405,6 +405,41 @@ class FirebaseService {
     await batch.commit();
   }
 
+  // =================== أكواد الخصم ===================
+
+  /// كل الأكواد — المفتاح في Firestore هو الكود نفسه (أحرف كبيرة).
+  Future<List<Map<String, dynamic>>> getCoupons() async {
+    try {
+      final snap = await firestore.collection('coupons').get();
+      final list = snap.docs.map((d) {
+        final m = Map<String, dynamic>.from(d.data());
+        m['code'] = d.id;
+        return m;
+      }).toList();
+      list.sort((a, b) =>
+          (a['code'] as String).toLowerCase().compareTo((b['code'] as String).toLowerCase()));
+      return list;
+    } catch (e) {
+      debugPrint('⚠️ getCoupons: $e');
+      return [];
+    }
+  }
+
+  Future<void> saveCoupon(String code, Map<String, dynamic> data) async {
+    await firestore
+        .collection('coupons')
+        .doc(code.trim().toUpperCase())
+        .set(data, SetOptions(merge: true));
+  }
+
+  Future<void> deleteCoupon(String code) async {
+    await firestore.collection('coupons').doc(code).delete();
+  }
+
+  Future<void> setCouponActive(String code, bool active) async {
+    await firestore.collection('coupons').doc(code).update({'active': active});
+  }
+
   // =================== رفع الصور ===================
 
   /// ضغط صورة محلية وإرجاعها base64 (بلا Storage):

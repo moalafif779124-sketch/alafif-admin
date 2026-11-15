@@ -74,6 +74,38 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
     }
   }
 
+  /// عرض إشعار التحويل بحجم كامل — الإدارة تحتاج قراءة المبلغ والتاريخ
+  /// من الصورة قبل تأكيد الطلب.
+  void _showReceipt(BuildContext context, String dataUri, String orderNumber) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(
+                'إشعار التحويل — $orderNumber',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+            Flexible(
+              child: InteractiveViewer(
+                maxScale: 4,
+                child: AppImage(imageUrl: dataUri, fit: BoxFit.contain),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('إغلاق'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   String _paymentMethodLabel(String method) {
     switch (method) {
       case 'kuraimi':
@@ -232,6 +264,64 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
                         Icons.receipt,
                         'مرجع الدفع',
                         order.paymentReference!,
+                      ),
+                    // ===== إثبات التحويل (كريمي/جيب) — كان يُحفظ ولا يُعرض =====
+                    if (order.transactionRef != null) ...[
+                      _infoRow(
+                        Icons.confirmation_number_outlined,
+                        'رقم عملية التحويل',
+                        order.transactionRef!,
+                      ),
+                      _infoRow(
+                        Icons.swap_horiz,
+                        'طريقة التحويل',
+                        order.transferMethod == 'jeeb'
+                            ? 'جيب'
+                            : order.transferMethod == 'kuraimi'
+                                ? 'كريمي'
+                                : (order.transferMethod ?? '-'),
+                      ),
+                    ],
+                    if (order.couponCode != null)
+                      _infoRow(
+                        Icons.local_offer_outlined,
+                        'كود الخصم',
+                        order.couponCode!,
+                      ),
+                    if (order.receiptImageBase64 != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: GestureDetector(
+                          onTap: () => _showReceipt(
+                            context,
+                            order.receiptImageBase64!,
+                            order.orderNumber,
+                          ),
+                          child: Row(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: SizedBox(
+                                  width: 72,
+                                  height: 72,
+                                  child: AppImage(
+                                    imageUrl: order.receiptImageBase64!,
+                                    fit: BoxFit.cover,
+                                    borderRadius: 8,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              const Expanded(
+                                child: Text(
+                                  'صورة إشعار التحويل — اضغط للتكبير',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                              ),
+                              const Icon(Icons.zoom_in, size: 20),
+                            ],
+                          ),
+                        ),
                       ),
 
                     const SizedBox(height: 16),
