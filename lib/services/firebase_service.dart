@@ -651,6 +651,26 @@ class FirebaseService {
     }).toList();
   }
 
+  /// تحديث حالة الدفع — تستخدمه شاشة الطلبات بعد مراجعة إثبات التحويل
+  /// (كريمي/جيب): تحوّل الطلب إلى «تم الدفع» وتختم من تحقق ومتى.
+  /// [confirmOrder] يجعل الطلب «مؤكداً» إن كان ما زال قيد المراجعة.
+  Future<void> updatePaymentStatus(
+    String orderId,
+    String status, {
+    bool confirmOrder = false,
+  }) async {
+    final update = <String, dynamic>{
+      'paymentStatus': status,
+      'paymentVerifiedAt': DateTime.now().millisecondsSinceEpoch,
+      'paymentVerifiedBy': auth.currentUser?.uid,
+      'updatedAt': DateTime.now().millisecondsSinceEpoch,
+    };
+    if (confirmOrder) {
+      update['status'] = 'confirmed';
+    }
+    await firestore.collection('orders').doc(orderId).update(update);
+  }
+
   /// تحديث حالة الطلب
   Future<void> updateOrderStatus(String orderId, String status) async {
     final update = <String, dynamic>{

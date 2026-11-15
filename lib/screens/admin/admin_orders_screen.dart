@@ -106,6 +106,59 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
     );
   }
 
+  bool _isTransfer(String method) => method == 'kuraimi' || method == 'jeeb';
+
+  /// تأكيد/تراجع عن استلام الدفع بعد مراجعة إثبات التحويل.
+  /// [revert] يعيد الحالة إلى «في انتظار الدفع» (نقرة خاطئة مثلاً).
+  Future<void> _confirmPayment(Order order, {bool revert = false}) async {
+    final label = revert ? 'التراجع عن تأكيد الدفع' : 'تأكيد استلام الدفع';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(label),
+        content: Text(revert
+            ? 'ستعود حالة الدفع إلى «في انتظار الدفع» للطلب ${order.orderNumber}.'
+            : 'تم التحقق من وصول مبلغ ${order.total.toStringAsFixed(0)} ريال '
+                'للطلب ${order.orderNumber}؟\n'
+                'سيُعلَّم الطلب مدفوعاً ويُؤكَّد إن كان قيد المراجعة.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('إلغاء'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(revert ? 'تراجع' : 'تأكيد'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await _firebase.updatePaymentStatus(
+        order.id,
+        revert ? 'pending' : 'paid',
+        confirmOrder: !revert && order.status == 'pending',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(revert ? 'أُعيدت حالة الدفع إلى الانتظار' : 'تم تأكيد استلام الدفع ✅'),
+          backgroundColor: revert ? AppColors.warning : AppColors.success,
+        ),
+      );
+      Navigator.of(context).pop(); // البوتوم شيت يعرض بيانات قديمة
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('فشل تحديث الدفع: $e'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
   String _paymentMethodLabel(String method) {
     switch (method) {
       case 'kuraimi':
@@ -324,11 +377,66 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
                         ),
                       ),
 
+                    // ===== تأكيد استلام الدفع (كريمي/جيب) =====
+                    // إثبات التحويل كان يُعرض فقط: بلا هذا الزر يبقى الطلب
+                    // «في انتظار الدفع» إلى الأبد ورغم وصول المبلغ.
+                    if (_isTransfer(order.paymentMethod)) ...[
+                      const SizedBox(height: 12),
+                      if (order.paymentStatus != 'paid')
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: () => _confirmPayment(order),
+                            icon: const Icon(Icons.verified_outlined, size: 18),
+                            label: const Text(
+                              'تأكيد استلام الدفع',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.success,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        )
+                      else
+                        Row(
+                          children: [
+                            const Icon(Icons.verified,
+                                color: AppColors.success, size: 18),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'تم التحقق من الدفع'
+                                '${order.paymentVerifiedAt != null ? ' — ${_formatDate(order.paymentVerifiedAt!.millisecondsSinceEpoch)}' : ''}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.success,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () =>
+                                  _confirmPayment(order, revert: true),
+                              child: const Text(
+                                'تراجع',
+                                style: TextStyle(
+                                    fontSize: 12, color: AppColors.textSecondary),
+                              ),
+                            ),
+                          ],
+                        ),
+                    ],
+
                     const SizedBox(height: 16),
                     const Divider(height: 1, color: AppColors.divider),
-                    const SizedBox(height: 16),
-
-                    // منتجات الطلب
                     const Text(
                       'المنتجات',
                       style: TextStyle(
@@ -1199,6 +1307,38 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
                     ),
                 ],
               ),
+              // شارة: تحويل بانتظار التحقق من الإيصال (كريمي/جيب)
+              if (_isTransfer((orderData['paymentMethod'] ?? '') as String) &&
+                  (orderData['paymentStatus'] ?? 'pending') != 'paid') ...[
+                const SizedBox(height: 6),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppColors.warning.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: AppColors.warning.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.hourglass_top,
+                          size: 11, color: AppColors.warning),
+                      SizedBox(width: 3),
+                      Text(
+                        'بانتظار التحقق من الدفع',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.warning,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 10),
               // زر التقدم / حالة نهائية
               SizedBox(
@@ -1385,6 +1525,39 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
                   ),
                 ],
               ),
+
+              // شارة: تحويل بانتظار التحقق من الإيصال (كريمي/جيب)
+              if (_isTransfer((orderData['paymentMethod'] ?? '') as String) &&
+                  (orderData['paymentStatus'] ?? 'pending') != 'paid') ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: AppColors.warning.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: AppColors.warning.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.hourglass_top,
+                          size: 13, color: AppColors.warning),
+                      const SizedBox(width: 4),
+                      Text(
+                        'بانتظار التحقق من الدفع',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.warning,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ),
         ),

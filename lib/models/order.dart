@@ -26,6 +26,10 @@ class Order {
   final String? transferMethod;
   final String? receiptImageBase64;
 
+  /// ختم التحقق من الدفع — يكتبه تطبيق الإدارة عند تأكيد استلام المبلغ.
+  final DateTime? paymentVerifiedAt;
+  final String? paymentVerifiedBy;
+
   /// كود الخصم المستخدم في الطلب (إن وُجد).
   final String? couponCode;
 
@@ -53,6 +57,8 @@ class Order {
     this.transactionRef,
     this.transferMethod,
     this.receiptImageBase64,
+    this.paymentVerifiedAt,
+    this.paymentVerifiedBy,
     this.couponCode,
     required this.shippingAddress,
     this.notes,
@@ -124,6 +130,11 @@ class Order {
           ? null
           : map['receiptImageBase64'],
       couponCode: map['couponCode'],
+      paymentVerifiedAt: map['paymentVerifiedAt'] != null
+          ? DateTime.fromMillisecondsSinceEpoch(
+              (map['paymentVerifiedAt'] as num).toInt())
+          : null,
+      paymentVerifiedBy: map['paymentVerifiedBy'],
       shippingAddress: AddressInfo.fromMap(map['shippingAddress'] ?? {}),
       notes: map['notes'],
       createdAt: map['createdAt'] != null
@@ -158,6 +169,8 @@ class Order {
       'transferMethod': transferMethod,
       'receiptImageBase64': receiptImageBase64,
       'couponCode': couponCode,
+      'paymentVerifiedAt': paymentVerifiedAt?.millisecondsSinceEpoch,
+      'paymentVerifiedBy': paymentVerifiedBy,
       'shippingAddress': shippingAddress.toMap(),
       'notes': notes,
       'createdAt': createdAt.millisecondsSinceEpoch,
