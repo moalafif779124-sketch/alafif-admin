@@ -29,3 +29,7 @@ Thumbs.db
 .flutter-plugins-dependencies
 pubspec.lock
 android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+
+# signing material — never commit
+android/app/keystore.p12
+android/key.properties
