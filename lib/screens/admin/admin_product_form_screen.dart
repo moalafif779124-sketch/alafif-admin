@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:video_player/video_player.dart';
 import '../../services/firebase_service.dart';
+import '../../services/catalog_service.dart';
+import '../../widgets/barcode_scanner_sheet.dart';
 import '../../config/colors.dart';
 import '../../config/constants.dart';
 import '../../widgets/app_image.dart';
@@ -68,6 +70,10 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
   List<Map<String, dynamic>> _categories = [];
   bool _loadingCategories = true;
   bool _saving = false;
+
+  /// كود الصنف المسحوح من «كشف الأصناف» (يُحفظ مع المنتج للربط المستقبلي).
+  String _scanCode = '';
+  bool _scanningCode = false;
 
   bool get _isEditMode => widget.existingProduct != null;
 
@@ -173,6 +179,7 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
   void _populateForm() {
     final p = widget.existingProduct!;
     _nameController.text = p['name'] ?? '';
+    _scanCode = (p['barcode'] ?? p['code'] ?? '').toString();
     _descriptionController.text = p['description'] ?? '';
     _priceController.text = (p['price'] ?? 0).toString();
     _oldPriceController.text = p['oldPrice']?.toString() ?? '';
@@ -270,6 +277,77 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
     }
   }
 
+  // =================== مسح كود الصنف من كشف الأصناف ===================
+
+  /// يفتح الماسح، يبحث الكود في كتالوج الأصناف المضمّن، ويعبّئ
+  /// الاسم والسعر (وسعر التخفيضات والفئة) تلقائياً — ثم يكمل الأدمن
+  /// الصورة والمقاسات وبقية التفاصيل.
+  Future<void> _scanCatalogCode() async {
+    final code = await BarcodeScannerSheet.open(context);
+    if (!mounted) return;
+    if (code == null || code.trim().isEmpty) return;
+
+    setState(() => _scanningCode = true);
+    try {
+      final entry = await CatalogService.instance.lookup(code);
+      if (entry == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('لا يوجد صنف بالكود: ${code.trim()} في كشف الأصناف'),
+              backgroundColor: AppColors.warning,
+            ),
+          );
+        }
+        return;
+      }
+
+      final sale = entry.salePrice;
+      final disc = entry.discountPrice;
+
+      setState(() {
+        _scanCode = entry.code;
+        _nameController.text = entry.name;
+        if (entry.hasDiscount) {
+          _priceController.text = disc.toStringAsFixed(0);
+          _oldPriceController.text = sale.toStringAsFixed(0);
+          _hasDiscount = true;
+          final pct = ((sale - disc) / sale * 100).round();
+          _discountPercentageController.text = pct > 0 ? pct.toString() : '';
+        } else {
+          _priceController.text = sale.toStringAsFixed(0);
+          _oldPriceController.text = '';
+        }
+        // مطابقة الفئة بالاسم إن وُجدت ضمن الفئات المحمّلة
+        final cat = _categories.firstWhere(
+          (c) => (c['name'] ?? '').toString() == entry.category,
+          orElse: () => const <String, dynamic>{},
+        );
+        if (cat.isNotEmpty) _categoryId = cat['id'];
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ تم تعبئة بيانات الصنف — أضف الصورة والمقاسات وباقي التفاصيل'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('تعذّر البحث: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _scanningCode = false);
+    }
+  }
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -300,6 +378,9 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
 
     final data = <String, dynamic>{
       'name': _nameController.text.trim(),
+      // كود الصنف من كشف الأصناف (إن مُسح) — للربط بين معرّف المنتج والباركود
+      if (_scanCode.isNotEmpty) 'barcode': _scanCode,
+      if (_scanCode.isNotEmpty) 'code': _scanCode,
       'description': _descriptionController.text.trim(),
       'price': double.tryParse(_priceController.text.trim()) ?? 0,
       'oldPrice': double.tryParse(_oldPriceController.text.trim()),
@@ -471,6 +552,62 @@ class _AdminProductFormScreenState extends State<AdminProductFormScreen> {
               // اسم المنتج
               _buildSectionTitle('معلومات المنتج الأساسية'),
               const SizedBox(height: 12),
+              // مسح كود الصنف لتعبئة البيانات تلقائياً من كشف الأصناف
+              InkWell(
+                onTap: _scanningCode ? null : _scanCatalogCode,
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: AppColors.primary.withValues(alpha: 0.35),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      _scanningCode
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.qr_code_scanner,
+                              color: AppColors.primary, size: 24),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'امسح كود الصنف لتعبئة البيانات',
+                              style: TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _scanCode.isEmpty
+                                  ? 'يُعبّئ الاسم والسعر تلقائياً من كشف الأصناف'
+                                  : 'الكود الحالي: $_scanCode — امسح لتغييره',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.arrow_back_ios_new,
+                          size: 14, color: AppColors.textSecondary),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
               TextFormField(
                 controller: _nameController,
                 decoration: _inputDecoration('اسم المنتج *', Icons.shopping_bag),

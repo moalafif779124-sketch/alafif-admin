@@ -47,6 +47,8 @@ dependencies:
   
   # QR Code
   qr_flutter: ^4.1.0
+  # Barcode scanning — مسح كود الصنف أثناء إضافة منتج (كشف الأصناف)
+  mobile_scanner: ^6.0.7
   
   # Local Storage
   shared_preferences: ^2.3.4
@@ -66,5 +68,6 @@ flutter:
     - assets/images/
     - assets/fonts/
     - assets/sounds/
+    - assets/data/
   
   fonts: []
