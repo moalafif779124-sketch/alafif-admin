@@ -104,6 +104,40 @@ class NotificationServer {
     return sent;
   }
 
+  /// إشعار العميل بأن المتجر تحقق من تحويله (كريمي/جيب).
+  Future<int> sendPaymentVerifiedNotification({
+    required String userId,
+    required String orderId,
+    required String orderNumber,
+    required double total,
+  }) async {
+    final tokens = await _firebase.getFcmTokens(userId);
+    if (tokens.isEmpty) {
+      debugPrint('⚠️ No FCM tokens for user $userId — payment push skipped');
+      return 0;
+    }
+
+    const title = 'تم التحقق من تحويلك ✅';
+    final body = 'استلمنا مبلغ ${total.toStringAsFixed(0)} ريال للطلب $orderNumber '
+        '— جاري تجهيز طلبك الآن.';
+
+    int sent = 0;
+    for (final token in tokens) {
+      final ok = await _postToServer(
+        targetToken: token,
+        title: title,
+        body: body,
+        data: {
+          'type': 'payment_verified',
+          'orderId': orderId,
+          'orderNumber': orderNumber,
+        },
+      );
+      if (ok) sent++;
+    }
+    return sent;
+  }
+
   /// POST إلى خادم Vercel — يرجع true عند نجاح الإرسال
   Future<bool> _postToServer({
     required String targetToken,

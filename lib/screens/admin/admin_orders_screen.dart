@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../services/firebase_service.dart';
+import '../../services/notification_server.dart';
 import '../../config/colors.dart';
 import '../../config/constants.dart';
 import '../../models/order.dart';
@@ -140,11 +141,37 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
         revert ? 'pending' : 'paid',
         confirmOrder: !revert && order.status == 'pending',
       );
+
+      // إشعار العميل — التحقق بلا إشعار يعني أن العميل يظل قلقاً ويسأل
+      // الواتساب رغم أن مبلغه وصل. الفشل هنا لا يُلغي التحقق نفسه.
+      var pushed = 0;
+      if (!revert) {
+        try {
+          pushed = await NotificationServer().sendPaymentVerifiedNotification(
+            userId: order.userId,
+            orderId: order.id,
+            orderNumber: order.orderNumber,
+            total: order.total,
+          );
+        } catch (e) {
+          debugPrint('⚠️ payment push failed: $e');
+        }
+      }
+
       if (!mounted) return;
+      final baseMsg = revert
+          ? 'أُعيدت حالة الدفع إلى الانتظار'
+          : 'تم تأكيد استلام الدفع ✅';
+      final pushMsg = !revert
+          ? (pushed > 0
+              ? ' — وأُشعر العميل'
+              : ' — تعذّر إرسال الإشعار (لا يوجد توكن للعميل)')
+          : '';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(revert ? 'أُعيدت حالة الدفع إلى الانتظار' : 'تم تأكيد استلام الدفع ✅'),
+          content: Text('$baseMsg$pushMsg'),
           backgroundColor: revert ? AppColors.warning : AppColors.success,
+          duration: const Duration(seconds: 4),
         ),
       );
       Navigator.of(context).pop(); // البوتوم شيت يعرض بيانات قديمة
