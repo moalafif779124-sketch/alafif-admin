@@ -803,6 +803,29 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
                           ),
                         ),
 
+                    // إرجاع المخزون للطلبات الملغاة سابقاً (ألغاها العميل أو
+                    // أُلغيت قبل إضافة الإرجاع التلقائي) — مرة واحدة فقط.
+                    if (order.status == 'cancelled' &&
+                        orderData['stockRestored'] != true) ...[
+                      const SizedBox(height: 4),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: FilledButton.icon(
+                          onPressed: () => _restoreStockOnly(orderData),
+                          icon: const Icon(Icons.undo, size: 18),
+                          label: const Text('إرجاع المخزون (لم يُرجَع بعد)'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: AppColors.warning,
+                            foregroundColor: Colors.white,
+                            minimumSize: const Size(double.infinity, 44),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+
                     const SizedBox(height: 32),
                   ],
                 ),
@@ -814,9 +837,53 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
     );
   }
 
+  /// إرجاع مخزون طلب ملغي مسبقاً (بلا تغيير حالته).
+  Future<void> _restoreStockOnly(Map<String, dynamic> orderData) async {
+    final orderId = (orderData['id'] ?? '').toString();
+    if (orderId.isEmpty) return;
+    Navigator.of(context).pop();
+    try {
+      final report = await _firebase.restoreOrderStock(orderId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text([report.summary, ...report.warnings].join('\n')),
+          backgroundColor:
+              report.warnings.isEmpty ? AppColors.success : AppColors.warning,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('فشل إرجاع المخزون: $e'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
   Future<void> _updateOrderStatus(String orderId, String newStatus) async {
     Navigator.of(context).pop(); // إغلاق البوتوم شيت
     try {
+      if (newStatus == 'cancelled') {
+        // الإلغاء = إلغاء + إرجاع المخزون في معاملة واحدة (القطع خُصمت عند
+        // الإنشاء؛ إلغاء بلا إرجاع يعني ضياعها من المخزون).
+        final report = await _firebase.restoreOrderStock(orderId, cancelOrder: true);
+        if (mounted) {
+          final lines = [report.summary, ...report.warnings];
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('تم إلغاء الطلب — ${lines.join('\n')}'),
+              backgroundColor:
+                  report.warnings.isEmpty ? AppColors.success : AppColors.warning,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+        return;
+      }
       await _firebase.updateOrderStatus(orderId, newStatus);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

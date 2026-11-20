@@ -9,6 +9,35 @@ import 'dart:io' as io;
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img_pkg;
 import '../config/constants.dart';
+import 'stock_restock.dart';
+
+/// نتيجة عملية إرجاع المخزون (تظهر في رسالة للمسؤول).
+class RestockReport {
+  /// سبق إرجاع مخزون هذا الطلب — لم يُلمس أي منتج الآن.
+  final bool alreadyDone;
+
+  /// عدد مستندات المنتجات التي تغيّر مخزونها.
+  final int products;
+
+  /// عدد القطع التي أُرجعت فعلاً.
+  final int pieces;
+
+  /// أسطر لم تُرجَع (منتج محذوف / مقاس غير معروف).
+  final List<String> warnings;
+
+  const RestockReport({
+    required this.alreadyDone,
+    this.products = 0,
+    this.pieces = 0,
+    this.warnings = const [],
+  });
+
+  String get summary {
+    if (alreadyDone) return 'مخزون هذا الطلب أُرجِع سابقاً ✓';
+    if (pieces == 0) return 'لا مخزون مُتتبَّع لهذا الطلب — لم يُرجَع شيء';
+    return 'أُرجعت $pieces قطعة إلى $products منتج';
+  }
+}
 
 /// خدمة Firebase المركزية
 class FirebaseService {
@@ -671,8 +700,142 @@ class FirebaseService {
     await firestore.collection('orders').doc(orderId).update(update);
   }
 
+  /// إرجاع المخزون عند إلغاء الطلب — عملية معاملاتية واحدة.
+  ///
+  /// [cancelOrder] = true يعني أيضاً تحويل الحالة إلى `cancelled` (رفض/إلغاء
+  /// من لوحة الإدارة). إن كان الطلب ملغياً مسبقاً (ألغاه العميل) فاستدعها
+  /// بالـ false كي تُرجع المخزون فقط.
+  ///
+  /// الحماية من الإرجاع المزدوج: مستند الطلب يأخذ `stockRestored = true`
+  /// مرة واحدة داخل نفس المعاملة، فأي استدعاء لاحق يخرج فوراً بلا لمس المنتجات.
+  Future<RestockReport> restoreOrderStock(
+    String orderId, {
+    bool cancelOrder = false,
+  }) async {
+    final orderRef = firestore.collection('orders').doc(orderId);
+
+    return firestore.runTransaction<RestockReport>((tx) async {
+      final orderSnap = await tx.get(orderRef);
+      if (!orderSnap.exists) {
+        throw Exception('الطلب غير موجود');
+      }
+      final data = orderSnap.data()!;
+      final alreadyCancelled = data['status'] == 'cancelled';
+
+      if (data['stockRestored'] == true) {
+        if (cancelOrder && !alreadyCancelled) {
+          tx.update(orderRef, {
+            'status': 'cancelled',
+            'updatedAt': DateTime.now().millisecondsSinceEpoch,
+          });
+        }
+        return const RestockReport(alreadyDone: true);
+      }
+
+      // اجمع الكميات المطلوبة لكل منتج (مقاس → كمية، وإجمالي)
+      final byProduct = <String, Map<String, int>>{};
+      final totalByProduct = <String, int>{};
+      final items = (data['items'] as List?) ?? const [];
+      for (final raw in items) {
+        final item = (raw as Map).cast<String, dynamic>();
+        final productId = (item['productId'] ?? '').toString();
+        if (productId.isEmpty) continue;
+        final qty = (item['quantity'] as num?)?.toInt() ?? 1;
+        final size = (item['size'] ?? '').toString().trim();
+        totalByProduct[productId] = (totalByProduct[productId] ?? 0) + qty;
+        final bySize = byProduct.putIfAbsent(productId, () => <String, int>{});
+        if (size.isNotEmpty) {
+          bySize[size] = (bySize[size] ?? 0) + qty;
+        }
+      }
+
+      if (byProduct.isEmpty) {
+        if (cancelOrder) {
+          tx.update(orderRef, {
+            'status': 'cancelled',
+            'stockRestored': true,
+            'stockRestoredAt': DateTime.now().millisecondsSinceEpoch,
+            'updatedAt': DateTime.now().millisecondsSinceEpoch,
+          });
+        }
+        return const RestockReport(alreadyDone: false, products: 0, pieces: 0);
+      }
+
+      // اقرأ كل المنتجات أولاً (شرط Firestore: كل القراءات قبل الكتابات)
+      final productRefs = <String, DocumentReference<Map<String, dynamic>>>{};
+      final productSnaps = <String, DocumentSnapshot<Map<String, dynamic>>>{};
+      for (final productId in byProduct.keys) {
+        final ref = firestore.collection('products').doc(productId);
+        productRefs[productId] = ref;
+        productSnaps[productId] = await tx.get(ref);
+      }
+
+      var productsTouched = 0;
+      var piecesRestored = 0;
+      final warnings = <String>[];
+
+      for (final entry in byProduct.entries) {
+        final productId = entry.key;
+        final snap = productSnaps[productId]!;
+        if (!snap.exists) {
+          warnings.add('منتج محذوف ($productId) — لم يُرجَع مخزونه');
+          continue;
+        }
+        final p = snap.data()!;
+        final variants = <String, int>{};
+        (p['stockVariants'] as Map?)?.forEach((k, v) {
+          variants[k.toString()] = (v as num).toInt();
+        });
+        final plan = computeRestock(
+          productName: (p['name'] ?? productId).toString(),
+          stockVariants: variants,
+          stockQuantity: (p['stockQuantity'] as num?)?.toInt() ?? 0,
+          restoreBySize: entry.value,
+          restoreTotal: totalByProduct[productId] ?? 0,
+        );
+        warnings.addAll(plan.warnings);
+
+        if (!plan.tracked || plan.restoredPieces == 0) continue;
+
+        final update = <String, dynamic>{
+          'stockUpdatedAt': DateTime.now().millisecondsSinceEpoch,
+        };
+        if (plan.stockVariants.isNotEmpty) {
+          update['stockVariants'] = plan.stockVariants;
+        }
+        if (plan.stockQuantity != null) {
+          update['stockQuantity'] = plan.stockQuantity;
+        }
+        tx.update(productRefs[productId]!, update);
+        productsTouched++;
+        piecesRestored += plan.restoredPieces;
+      }
+
+      tx.update(orderRef, {
+        if (cancelOrder) 'status': 'cancelled',
+        'stockRestored': true,
+        'stockRestoredAt': DateTime.now().millisecondsSinceEpoch,
+        'stockRestoredPieces': piecesRestored,
+        'updatedAt': DateTime.now().millisecondsSinceEpoch,
+      });
+
+      return RestockReport(
+        alreadyDone: false,
+        products: productsTouched,
+        pieces: piecesRestored,
+        warnings: warnings,
+      );
+    });
+  }
+
   /// تحديث حالة الطلب
   Future<void> updateOrderStatus(String orderId, String status) async {
+    // الإلغاء يمر عبر معاملة الإرجاع: المخزون خُصم وقت الإنشاء، فإلغاء بلا
+    // إرجاع يعني «ضياع» قطع من المخزون إلى الأبد (كان هذا هو السلوك سابقاً).
+    if (status == 'cancelled') {
+      await restoreOrderStock(orderId, cancelOrder: true);
+      return;
+    }
     final update = <String, dynamic>{
       'status': status,
       'updatedAt': DateTime.now().millisecondsSinceEpoch,
